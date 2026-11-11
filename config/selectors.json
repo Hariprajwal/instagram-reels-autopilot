@@ -1,0 +1,108 @@
+{
+  "reel": {
+    "active_video": [
+      "video[src]",
+      "video",
+      "article video"
+    ],
+    "reel_container": [
+      "article",
+      "main[role='main'] section",
+      "div[role='dialog']"
+    ],
+    "author_link": [
+      "article a[role='link'][href^='/']:not([href*='/reel/']):not([href*='/explore/']):not([href*='/direct/'])",
+      "header a[role='link']",
+      "article header a",
+      "div[role='presentation'] a[role='link']"
+    ],
+    "caption": [
+      "article h1[dir='auto']",
+      "article span[dir='auto']",
+      "article div[dir='auto']"
+    ],
+    "comment_button": [
+      "svg[aria-label='Comment']",
+      "svg[aria-label='Comments']",
+      "div[role='button']:has(svg[aria-label='Comment'])",
+      "div[role='button']:has(svg[aria-label='Comments'])",
+      "button:has(svg[aria-label='Comment'])",
+      "span:has(svg[aria-label='Comment'])"
+    ]
+  },
+  "comments": {
+    "drawer": [
+      "div[role='dialog']",
+      "div[aria-label='Comments']",
+      "section:has(h2:has-text('Comments'))",
+      "div:has(> div > h2:has-text('Comments'))"
+    ],
+    "close_button": [
+      "svg[aria-label='Close']",
+      "div[role='button']:has(svg[aria-label='Close'])",
+      "button:has(svg[aria-label='Close'])"
+    ],
+    "comment_item": [
+      "ul > div > li",
+      "div[role='button'][tabindex='0']:has(img[alt*='profile picture'])",
+      "div[role='presentation']:has(a[role='link'][href^='/'])",
+      "div:has(> a[role='link'][href^='/'])"
+    ],
+    "commenter_username": [
+      "a[role='link'][href^='/']:not([href*='/reel/']):not([href*='/explore/'])",
+      "h3 a",
+      "span a[role='link']"
+    ],
+    "comment_text": [
+      "span[dir='auto']",
+      "div[dir='auto']",
+      "div[style*='display: inline']"
+    ]
+  },
+  "profile": {
+    "header": [
+      "header section",
+      "main[role='main'] header",
+      "header"
+    ],
+    "username": [
+      "header h2",
+      "header h1",
+      "header span[dir='auto']"
+    ],
+    "private_indicator": [
+      "h2:has-text('This account is private')",
+      "h2:has-text('This Account is Private')",
+      ":text('This account is private')",
+      ":text('Follow this account to see their photos and videos')",
+      "svg[aria-label*='Private']"
+    ],
+    "message_button": [
+      "div[role='button']:has-text('Message')",
+      "button:has-text('Message')",
+      "a:has-text('Message')",
+      "a[href*='/direct/t/']",
+      "div[role='button']:has-text('Send message')",
+      "button:has-text('Send message')"
+    ],
+    "follow_button": [
+      "button:has-text('Follow')",
+      "button:has-text('Following')",
+      "button:has-text('Requested')",
+      "div[role='button']:has-text('Follow')"
+    ],
+    "bio": [
+      "header section > div:last-child",
+      "header h1 + div",
+      "header span[dir='auto']",
+      "main header div[dir='auto']"
+    ],
+    "messaging_restrictions": [
+      ":text('You can send 1 message to invite them to chat')",
+      ":text('Only accounts that follow this user can send messages')",
+      ":text('You can\\'t message this account unless they follow you')",
+      ":text('This account can\\'t receive your message')"
+    ]
+  }
+}
+
