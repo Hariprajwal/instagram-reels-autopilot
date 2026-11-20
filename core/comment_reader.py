@@ -182,31 +182,32 @@ class CommentReader:
             return []
 
     async def click_commenter_profile(self, username: str) -> bool:
-        """Finds and clicks the specific commenter's username anchor tag inside comments."""
+        """
+        Finds and clicks the specific commenter's username link inside comments.
+        If DOM click does not transition to the profile, smoothly navigates directly
+        to guarantee the profile opens every time without failing.
+        """
         clean_user = username.strip().lstrip("@").lower()
-        print(f"[CommentReader] Clicking profile link for @{clean_user}...")
+        print(f"[CommentReader] Opening profile for @{clean_user}...")
 
-        # Selector for exact user href
-        selector = f"a[role='link'][href='/{clean_user}/'], a[href='/{clean_user}/'], a[href='/{clean_user}']"
-        try:
-            el = await self.page.wait_for_selector(selector, timeout=3000, state="visible")
-            if el:
-                await el.scroll_into_view_if_needed()
-                await asyncio.sleep(0.3)
-                await el.click()
-                return True
-        except Exception:
-            pass
-
-        # Fallback via evaluate click
+        # 1. Search and click username element inside comments dialog
         js_click_user = f"""
         () => {{
-            const targetUser = '{clean_user}';
-            const links = Array.from(document.querySelectorAll('a'));
-            for (const link of links) {{
-                const href = link.getAttribute('href') || '';
-                if (href.replace(/^\\/+|\\/+$/g, '').toLowerCase() === targetUser) {{
-                    link.click();
+            const targetUser = '{clean_user}'.toLowerCase();
+            const dialog = document.querySelector('div[role="dialog"]') || document.querySelector('div[aria-label="Comments"]') || document.body;
+            const elements = Array.from(dialog.querySelectorAll('a, h3, span'));
+            for (const el of elements) {{
+                const href = (el.getAttribute('href') || '').toLowerCase();
+                const text = (el.innerText || '').trim().toLowerCase();
+                if (href.includes('/' + targetUser + '/') || href.endsWith('/' + targetUser) || href === '/' + targetUser) {{
+                    el.scrollIntoView({{ behavior: 'instant', block: 'center' }});
+                    el.click();
+                    return true;
+                }}
+                if (text === targetUser || text === '@' + targetUser) {{
+                    const clickable = el.closest('a') || el;
+                    clickable.scrollIntoView({{ behavior: 'instant', block: 'center' }});
+                    clickable.click();
                     return true;
                 }}
             }}
@@ -214,8 +215,23 @@ class CommentReader:
         }}
         """
         try:
-            return await self.page.evaluate(js_click_user)
+            clicked = await self.page.evaluate(js_click_user)
+            if clicked:
+                for _ in range(5):
+                    await asyncio.sleep(0.3)
+                    if clean_user in self.page.url.lower():
+                        return True
         except Exception as e:
             print(f"[CommentReader] Error clicking user link: {e}")
+
+        # 2. FAIL-SAFE: Direct profile navigation so investigation never stalls
+        profile_url = f"https://www.instagram.com/{clean_user}/"
+        print(f"[CommentReader] Navigating directly to profile: {profile_url}")
+        try:
+            await self.page.goto(profile_url, wait_until="domcontentloaded")
+            await asyncio.sleep(1.0)
+            return True
+        except Exception as e:
+            print(f"[CommentReader] Direct navigation error: {e}")
             return False
 

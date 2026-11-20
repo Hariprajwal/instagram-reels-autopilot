@@ -16,21 +16,19 @@ class ProfileInspector:
         self.selectors = settings.load_selectors().get("profile", {})
 
     async def wait_for_profile_load(self, username: str, timeout_ms: int = 10000) -> bool:
-        """Waits for the profile page header or username element to render."""
+        """Waits for the profile page header or main container to render."""
         clean_user = username.strip().lstrip("@").lower()
         start = time.time()
 
         while (time.time() - start) * 1000 < timeout_ms:
-            # Check if URL matches profile
             current_url = self.page.url.lower()
             if clean_user in current_url:
-                # Wait for header elements
-                header_selectors = self.selectors.get("header", ["header", "main header"])
+                header_selectors = self.selectors.get("header", ["header", "main header", "main", "h2", "section"])
                 for s in header_selectors:
-                    if await self.page.is_visible(s, timeout=600):
-                        await asyncio.sleep(1.0)
+                    if await self.page.is_visible(s, timeout=500):
+                        await asyncio.sleep(0.5)
                         return True
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.4)
 
         return False
 
@@ -383,22 +381,32 @@ class ProfileInspector:
 
     async def return_to_reel_and_reopen_comments(self, reel_url: str, comment_reader: CommentReader):
         """Safely navigates back to the exact Reel and reopens comments."""
-        print(f"[ProfileInspector] Returning to original Reel: {reel_url}...")
-        try:
-            await self.page.go_back(wait_until="domcontentloaded")
-            await asyncio.sleep(1.5)
-        except Exception:
-            pass
+        match = re.search(r'/(?:reel|reels)/([A-Za-z0-9_-]+)', reel_url)
+        reel_id = match.group(1) if match else None
+        canonical_reel = f"https://www.instagram.com/reel/{reel_id}/" if (reel_id and not reel_id.startswith("vid_") and not reel_id.startswith("unknown")) else reel_url
 
-        # If back navigation didn't land on Reel URL, navigate directly
-        if reel_url not in self.page.url:
-            print(f"[ProfileInspector] Fallback direct navigation to Reel: {reel_url}")
-            await self.page.goto(reel_url, wait_until="domcontentloaded")
-            await asyncio.sleep(2.0)
+        current_url = self.page.url.lower()
+        is_on_profile = any(keyword in current_url for keyword in ["instagram.com/"]) and not any(k in current_url for k in ["/reel/", "/reels/"])
+
+        if is_on_profile:
+            print(f"[ProfileInspector] Returning from profile to original Reel: {canonical_reel}...")
+            try:
+                await self.page.go_back(wait_until="domcontentloaded")
+                await asyncio.sleep(1.0)
+            except Exception:
+                pass
+
+        # Check if we landed back on the reel
+        current_url = self.page.url.lower()
+        is_on_reel = (reel_id and reel_id.lower() in current_url) or ("/reels" in current_url) or ("/reel" in current_url)
+        if not is_on_reel:
+            print(f"[ProfileInspector] Navigating directly to Reel: {canonical_reel}")
+            await self.page.goto(canonical_reel, wait_until="domcontentloaded")
+            await asyncio.sleep(1.5)
 
         # Confirm comments are reopened
         if not await comment_reader.is_comments_open():
             print("[ProfileInspector] Reopening comments panel...")
             await comment_reader.open_comments()
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.8)
 

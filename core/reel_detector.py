@@ -87,7 +87,11 @@ class ReelDetector:
         }
         """
         try:
-            return await self.page.evaluate(js_script)
+            info = await self.page.evaluate(js_script)
+            reel_id = info.get("reel_id")
+            if reel_id and not reel_id.startswith("unknown") and not reel_id.startswith("vid_"):
+                info["url"] = f"https://www.instagram.com/reel/{reel_id}/"
+            return info
         except Exception as e:
             return {
                 "url": self.page.url,
