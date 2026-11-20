@@ -28,7 +28,15 @@ class AgentSettings(BaseModel):
 
     # Primary LLM: Groq API
     groq_api_key: str = Field(default=os.getenv("GROQ_API_KEY", ""))
-    groq_model: str = Field(default=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"))
+    groq_model: str = Field(default=os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"))
+    groq_fallback_models: list = Field(default=[
+        "qwen/qwen3.8-27b",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "allam-2-7b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant"
+    ])
 
     # Alternative LLM: OpenRouter API
     openrouter_api_key: str = Field(default=os.getenv("OPENROUTER_API_KEY", ""))

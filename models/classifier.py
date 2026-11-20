@@ -267,34 +267,110 @@ Bio: {bio_text or "N/A"}
         return self._build_analysis_object(username, reel_id, comment_text, message_availability, res)
 
     async def _call_groq(self, prompt: str) -> Optional[dict]:
-        response = await self.groq_client.chat.completions.create(
-            model=settings.groq_model,
-            messages=[
-                {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.88,
-            top_p=0.95,
-            max_tokens=650
-        )
-        content = response.choices[0].message.content
-        return json.loads(content)
+        """
+        Executes Groq chat completion with automatic multi-model fallback rotation.
+        If the primary model is decommissioned, rate-limited, or unavailable,
+        it automatically tries the next active model in sequence.
+        """
+        models_to_try = [settings.groq_model]
+        fallback_models = getattr(settings, "groq_fallback_models", [
+            "qwen/qwen3.8-27b",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "allam-2-7b",
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant"
+        ])
+        for m in fallback_models:
+            if m not in models_to_try:
+                models_to_try.append(m)
+
+        last_error = None
+        for model_name in models_to_try:
+            try:
+                try:
+                    response = await self.groq_client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
+                            {"role": "user", "content": prompt}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.88,
+                        top_p=0.95,
+                        max_tokens=650
+                    )
+                except Exception as json_err:
+                    err_str = str(json_err).lower()
+                    if "response_format" in err_str or "json_validate_failed" in err_str:
+                        response = await self.groq_client.chat.completions.create(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
+                                {"role": "user", "content": prompt}
+                            ],
+                            temperature=0.88,
+                            top_p=0.95,
+                            max_tokens=650
+                        )
+                    else:
+                        raise json_err
+
+                content = (response.choices[0].message.content or "").strip()
+                if content.startswith("```"):
+                    content = re.sub(r"^```(?:json)?\s*", "", content)
+                    content = re.sub(r"\s*```$", "", content)
+                data = json.loads(content)
+                if model_name != settings.groq_model:
+                    print(f"[AIClassifier] ✓ Groq rotated to fallback model: [{model_name}] (Success)")
+                return data
+            except Exception as e:
+                last_error = e
+                print(f"[AIClassifier] Groq model '{model_name}' unavailable ({e}). Rotating to next fallback model...")
+                continue
+
+        raise last_error or RuntimeError("All Groq models exhausted.")
 
     async def _call_openrouter(self, prompt: str) -> Optional[dict]:
-        response = await self.openrouter_client.chat.completions.create(
-            model=settings.openrouter_model,
-            messages=[
-                {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.88,
-            top_p=0.95,
-            max_tokens=650
-        )
-        content = response.choices[0].message.content
-        return json.loads(content)
+        """
+        Executes OpenRouter chat completion with multi-model fallback rotation.
+        """
+        models_to_try = [
+            settings.openrouter_model,
+            "meta-llama/llama-3.3-70b-instruct",
+            "google/gemini-2.0-flash-exp:free",
+            "mistralai/mistral-7b-instruct:free"
+        ]
+        unique_models = []
+        for m in models_to_try:
+            if m and m not in unique_models:
+                unique_models.append(m)
+
+        last_error = None
+        for model_name in unique_models:
+            try:
+                response = await self.openrouter_client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.88,
+                    top_p=0.95,
+                    max_tokens=650
+                )
+                content = (response.choices[0].message.content or "").strip()
+                if content.startswith("```"):
+                    content = re.sub(r"^```(?:json)?\s*", "", content)
+                    content = re.sub(r"\s*```$", "", content)
+                return json.loads(content)
+            except Exception as e:
+                last_error = e
+                print(f"[AIClassifier] OpenRouter model '{model_name}' failed ({e}). Rotating to next model...")
+                continue
+
+        raise last_error or RuntimeError("All OpenRouter models exhausted.")
 
     async def _call_ollama(self, prompt: str) -> Optional[dict]:
         response = await self.ollama_client.chat.completions.create(
