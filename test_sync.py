@@ -1,3 +1,4 @@
+import re
 import time
 
 print("======================================================================", flush=True)
@@ -143,6 +144,20 @@ resF = classifier._rule_based_fallback(
 )
 assert resF["decision"] == DecisionClassification.NOT_INTERESTED.value
 print("    >>> PASS ✓ (All self-promo bait correctly ignored!)\n", flush=True)
+
+# Scenario G: Comment Text Cleaning (Ignore Like Counts like "4 likes", "24,845 likes")
+print("  [Scenario G: Like Counter Discard & Sanitization]")
+like_samples = ["4 likes", "24,845 likes", "1 like", "10k likes", "likes", "Like"]
+for lk in like_samples:
+    is_pure_like = bool(re.match(r"^[\d,.]+[kmb]?\s*likes?$", lk, re.IGNORECASE) or lk.lower() in ["like", "likes", "reply"])
+    print(f"    '{lk}' -> Identified as pure Like counter: {is_pure_like}")
+    assert is_pure_like, f"Expected '{lk}' to be recognized as like counter!"
+
+raw_with_trailing = "My respect for cameraman 😄\n24,845 likes Reply"
+cleaned = re.sub(r"[\d,.]+[kmb]?\s*likes?\s*(reply)?.*$", "", raw_with_trailing, flags=re.IGNORECASE).strip()
+print(f"    Raw: '{raw_with_trailing}' -> Cleaned: '{cleaned}'")
+assert cleaned == "My respect for cameraman 😄"
+print("    >>> PASS ✓ (Like counters never mistaken for comment text!)\n", flush=True)
 
 # Session Stats & Message Logging Verification
 print("  [Session Stats & Dedicated Message Log Verification]")

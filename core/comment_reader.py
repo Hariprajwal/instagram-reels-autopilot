@@ -144,11 +144,38 @@ class CommentReader:
                 let commentText = '';
 
                 for (const node of textNodes) {
-                    const text = node.innerText.trim();
-                    // Skip usernames, timestamps, and action labels
-                    if (text === username || text === '@' + username) continue;
-                    if (['Like', 'Reply', 'See translation', 'View replies', 'Hide replies'].includes(text)) continue;
-                    if (/^\\d+\\s*(s|m|h|d|w)$/i.test(text)) continue;
+                    // Skip elements inside like/reply action buttons
+                    const parentBtn = node.closest('button, [role="button"]');
+                    if (parentBtn && parentBtn !== row) {
+                        const btnText = (parentBtn.innerText || '').toLowerCase();
+                        if (btnText.includes('like') || btnText.includes('reply') || btnText.includes('translation')) {
+                            continue;
+                        }
+                    }
+
+                    let text = node.innerText.trim();
+                    if (!text) continue;
+
+                    // Skip usernames
+                    if (text.toLowerCase() === username || text.toLowerCase() === '@' + username) continue;
+
+                    // Clean any concatenated action metadata if an outer container was picked up
+                    text = text.replace(/[\d,.]+[kmb]?\s*likes?\s*(reply)?.*$/i, '').trim();
+                    text = text.replace(/\s*reply\s*$/i, '').trim();
+                    text = text.replace(/\s*see translation\s*$/i, '').trim();
+                    text = text.replace(/\s*see original\s*$/i, '').trim();
+
+                    // Strictly filter out like counters (e.g. "4 likes", "24,845 likes", "1 like", "likes")
+                    if (/^[\d,.]+[kmb]?\s*likes?$/i.test(text) || /^likes?$/i.test(text)) continue;
+
+                    // Strictly filter out reply counts and system buttons
+                    if (/^(view\s+)?(\d+\s+)?(more\s+)?repl(?:y|ies)/i.test(text)) continue;
+                    if (/^hide\s+replies/i.test(text)) continue;
+                    if (['like', 'likes', 'reply', 'replies', 'see translation', 'see original', 'view replies', 'hide replies', 'pinned', 'edited', 'author', 'creator'].includes(text.toLowerCase())) continue;
+
+                    // Strictly filter out timestamps (e.g. "1d", "4h", "2w", "30s", "10m")
+                    if (/^\d+\s*(s|m|h|d|w|y|sec|min|hr|day|wk|yr)s?$/i.test(text) || /^\d+[smhdwy]$/i.test(text)) continue;
+
                     if (text.length > commentText.length) {
                         commentText = text;
                     }
@@ -170,9 +197,20 @@ class CommentReader:
             raw_comments = await self.page.evaluate(js_extract)
             results = []
             for idx, c in enumerate(raw_comments):
+                raw_text = (c.get("text") or "").strip()
+                # Secondary Python-level sanitization: discard pure like counters
+                if re.match(r"^[\d,.]+[kmb]?\s*likes?$", raw_text, re.IGNORECASE) or raw_text.lower() in ["like", "likes", "reply"]:
+                    print(f"[CommentReader] Ignored like counter string erroneously captured as comment: '{raw_text}' for @{c.get('username')}")
+                    continue
+
+                # Strip any trailing like counter artifacts
+                clean_text = re.sub(r"[\d,.]+[kmb]?\s*likes?\s*(reply)?.*$", "", raw_text, flags=re.IGNORECASE).strip()
+                if not clean_text:
+                    clean_text = raw_text
+
                 results.append(CommentData(
                     username=c["username"],
-                    text=c["text"],
+                    text=clean_text,
                     position_index=idx,
                     reel_id=reel_id
                 ))
