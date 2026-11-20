@@ -116,6 +116,26 @@
       ":text('Please enter the code we sent')",
       ":text('checkpoint_required')"
     ]
+  },
+  "direct_chat": {
+    "chat_box": [
+      "div[role='dialog']:has(div[contenteditable='true'])",
+      "div[aria-label*='Direct']",
+      "div:has(> div > div[contenteditable='true'])"
+    ],
+    "message_input": [
+      "div[contenteditable='true'][role='textbox']",
+      "div[aria-label='Message'][contenteditable='true']",
+      "div[aria-label*='Message'][contenteditable='true']",
+      "div[contenteditable='true']",
+      "textarea[placeholder*='Message']"
+    ],
+    "close_chat": [
+      "div[role='dialog'] svg[aria-label='Close']",
+      "svg[aria-label='Close']",
+      "div[role='button']:has(svg[aria-label='Close'])",
+      "button:has(svg[aria-label='Close'])"
+    ]
   }
 }
 

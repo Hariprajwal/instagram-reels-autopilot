@@ -176,6 +176,127 @@ class ProfileInspector:
                 message_availability=MessageAvailability.UNCERTAIN
             )
 
+    async def open_message_dialog(self) -> bool:
+        """
+        Clicks the 'Message' button on the profile header to open the floating
+        Direct Message chat drawer shown in the bottom-right corner.
+        """
+        print("[ProfileInspector] Clicking 'Message' button to open chat drawer...")
+        message_selectors = self.selectors.get("message_button", [
+            "div[role='button']:has-text('Message')",
+            "button:has-text('Message')",
+            "a:has-text('Message')",
+            "div[role='button']:has-text('Send message')",
+            "button:has-text('Send message')"
+        ])
+
+        for sel in message_selectors:
+            try:
+                btn = await self.page.wait_for_selector(sel, timeout=1800, state="visible")
+                if btn:
+                    await btn.scroll_into_view_if_needed()
+                    await asyncio.sleep(0.3)
+                    await btn.click()
+                    await asyncio.sleep(2.0)
+                    if await self._find_chat_input():
+                        print("[ProfileInspector] Chat drawer opened successfully.")
+                        return True
+            except Exception:
+                continue
+
+        # JavaScript fallback click
+        js_click_msg = """
+        () => {
+            const buttons = Array.from(document.querySelectorAll('header button, header div[role="button"], header a, main header button, main header div[role="button"]'));
+            const keywords = ['message', 'send message', 'direct', 'mensaje', 'mensagem'];
+            for (const b of buttons) {
+                const text = (b.innerText || '').trim().toLowerCase();
+                const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                if (keywords.some(k => text === k || text.includes(k) || aria.includes(k))) {
+                    b.click();
+                    return true;
+                }
+            }
+            return false;
+        }
+        """
+        try:
+            clicked = await self.page.evaluate(js_click_msg)
+            if clicked:
+                await asyncio.sleep(2.0)
+                return (await self._find_chat_input()) is not None
+        except Exception:
+            pass
+
+        return False
+
+    async def _find_chat_input(self):
+        """Finds the contenteditable text input inside the floating DM drawer."""
+        input_selectors = [
+            "div[contenteditable='true'][role='textbox']",
+            "div[aria-label*='Message'][contenteditable='true']",
+            "div[contenteditable='true']",
+            "textarea[placeholder*='Message']"
+        ]
+        for sel in input_selectors:
+            try:
+                el = await self.page.wait_for_selector(sel, timeout=1200, state="visible")
+                if el:
+                    return el
+            except Exception:
+                continue
+        return None
+
+    async def draft_or_send_message(self, question: str, auto_send: bool = False) -> bool:
+        """Types the prepared question into the open chat drawer and optionally sends it."""
+        input_el = await self._find_chat_input()
+        if not input_el:
+            print("[ProfileInspector] Could not find chat message input box.")
+            return False
+
+        try:
+            await input_el.click()
+            await asyncio.sleep(0.3)
+            # Type naturally with keystroke delay
+            await input_el.type(question, delay=25)
+            await asyncio.sleep(0.8)
+
+            if auto_send:
+                print("[ProfileInspector] AUTO_SEND_DM is enabled. Sending message via Enter...")
+                await self.page.keyboard.press("Enter")
+                await asyncio.sleep(1.5)
+                return True
+            else:
+                print(f"[ProfileInspector] Message drafted in Chrome chat box: \"{question}\"")
+                return True
+        except Exception as e:
+            print(f"[ProfileInspector] Error typing message: {e}")
+            return False
+
+    async def close_chat_dialog(self):
+        """Closes the floating chat drawer so the screen is restored before navigating back."""
+        close_selectors = [
+            "div[role='dialog'] svg[aria-label='Close']",
+            "svg[aria-label='Close']",
+            "div[role='button']:has(svg[aria-label='Close'])"
+        ]
+        for sel in close_selectors:
+            try:
+                btn = await self.page.wait_for_selector(sel, timeout=1000, state="visible")
+                if btn:
+                    await btn.click()
+                    await asyncio.sleep(0.5)
+                    return
+            except Exception:
+                continue
+
+        # Fallback: press Escape
+        try:
+            await self.page.keyboard.press("Escape")
+            await asyncio.sleep(0.5)
+        except Exception:
+            pass
+
     async def return_to_reel_and_reopen_comments(self, reel_url: str, comment_reader: CommentReader):
         """Safely navigates back to the exact Reel and reopens comments."""
         print(f"[ProfileInspector] Returning to original Reel: {reel_url}...")

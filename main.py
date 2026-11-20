@@ -106,6 +106,26 @@ async def run_agent():
                 if analysis.decision.value == "ELIGIBLE":
                     console.print(f"\n[bold bright_green]🎯 ELIGIBLE CONVERSATION IDENTIFIED: @{username}![/bold bright_green]")
                     console.print(f'[bright_green]💬 PREPARED QUESTION: "{analysis.suggested_question}"[/bright_green]')
+
+                    # Open Message Dialog in Chrome (floating drawer) and draft/send
+                    opened_chat = await profile_inspector.open_message_dialog()
+                    if opened_chat:
+                        sent = await profile_inspector.draft_or_send_message(
+                            question=analysis.suggested_question,
+                            auto_send=settings.auto_send_dm
+                        )
+                        if sent:
+                            analysis.message_sent = settings.auto_send_dm
+                            if settings.auto_send_dm:
+                                session_logger.stats.questions_sent += 1
+                                console.print(f"[bold green]✓ Message successfully sent to @{username}![/bold green]")
+                            else:
+                                console.print(f"[bold cyan]✓ Message drafted in Chrome chat box for @{username} (Review & send in Chrome)[/bold cyan]")
+                        # Close chat drawer before returning to Reel
+                        await profile_inspector.close_chat_dialog()
+                    else:
+                        console.print(f"[yellow]Could not open message dialog for @{username}. Saved to review queue.[/yellow]")
+
                     console.print("[dim]Saved to review queue: session_data/queue.json (Run 'python ui/cli.py' to view/approve)[/dim]\n")
 
                 # 8. Return to exact original Reel and reopen comments
