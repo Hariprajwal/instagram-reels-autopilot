@@ -100,27 +100,47 @@ async def run_agent():
                 # 6. Run Decision Engine (Intent, DM Permission, 1-Question Rule)
                 analysis = await decision_engine.evaluate_commenter(comment, profile_data, reel_context)
 
+                # Record analysis in session logger with full Reel URL and Profile link
+                session_logger.record_analysis(analysis, reel_url=reel_context.url)
+
                 # 7. Render Prospect Card on Dashboard
                 dashboard.display_prospect_card(analysis)
 
                 if analysis.decision.value == "ELIGIBLE":
                     console.print(f"\n[bold bright_green]🎯 ELIGIBLE CONVERSATION IDENTIFIED: @{username}![/bold bright_green]")
-                    console.print(f'[bright_green]💬 PREPARED QUESTION: "{analysis.suggested_question}"[/bright_green]')
 
-                    # Open Message Dialog in Chrome (floating drawer) and draft/send
+                    # Prepare multi-message sequence:
+                    # Message 1: The commenter's original comment (quoted for instant context)
+                    # Message 2: Personalized reaction & 1-question
+                    # Message 3 (Optional): Short friendly follow-up
+                    messages_to_send = analysis.message_sequence
+                    if not messages_to_send:
+                        messages_to_send = [f'"{comment.text}"', analysis.suggested_question or "Hey! Saw your comment on the reel!"]
+
+                    for idx, msg in enumerate(messages_to_send, 1):
+                        console.print(f'[bright_green]💬 MESSAGE {idx}: "{msg}"[/bright_green]')
+
+                    # Open Message Dialog in Chrome (floating drawer) and send sequence
                     opened_chat = await profile_inspector.open_message_dialog()
                     if opened_chat:
-                        sent = await profile_inspector.draft_or_send_message(
-                            question=analysis.suggested_question,
+                        sent = await profile_inspector.send_message_sequence(
+                            messages=messages_to_send,
                             auto_send=settings.auto_send_dm
                         )
                         if sent:
                             analysis.message_sent = settings.auto_send_dm
                             if settings.auto_send_dm:
                                 session_logger.stats.questions_sent += 1
-                                console.print(f"[bold green]✓ Message successfully sent to @{username}![/bold green]")
+                                console.print(f"[bold green]✓ All {len(messages_to_send)} message(s) successfully sent to @{username}![/bold green]")
+                                session_logger.record_message_sent(
+                                    reel_id=reel_context.reel_id,
+                                    reel_url=reel_context.url,
+                                    username=username,
+                                    comment_text=comment.text,
+                                    messages=messages_to_send
+                                )
                             else:
-                                console.print(f"[bold cyan]✓ Message drafted in Chrome chat box for @{username} (Review & send in Chrome)[/bold cyan]")
+                                console.print(f"[bold cyan]✓ Messages drafted in Chrome chat box for @{username} (Review & send in Chrome)[/bold cyan]")
                         
                         # Wait 2 seconds so the sent message bubble is clearly visible before closing
                         await asyncio.sleep(2.0)
@@ -153,11 +173,17 @@ async def run_agent():
 
             # 10. Close comments drawer and restore original Reel view
             await comment_reader.close_comments()
+            await asyncio.sleep(1.0)
 
             # 11. Display updated Live Statistics
             dashboard.display_session_stats(session_logger.stats)
 
-            console.print("\n[bold cyan]Waiting for you to manually scroll to the next Reel...[/bold cyan]")
+            # 12. Advance to NEXT Reel via Down Arrow (Automatic condition when all comments finish)
+            if settings.auto_next_reel:
+                console.print("\n[bold cyan]⚡ All comments finished on this Reel. Automatically advancing to NEXT Reel via Down Arrow...[/bold cyan]")
+                await reel_detector.navigate_to_next_reel()
+            else:
+                console.print("\n[bold cyan]Waiting for you to manually scroll to the next Reel...[/bold cyan]")
 
     except KeyboardInterrupt:
         console.print("\n[bold yellow]Agent interrupted by operator (Ctrl+C).[/bold yellow]")
@@ -168,7 +194,13 @@ async def run_agent():
         dashboard.display_session_stats(session_logger.stats)
         console.print(f"[cyan]• Session report saved to: session_data/session_report.json[/cyan]")
         console.print(f"[cyan]• Leads CSV saved to: session_data/session_leads.csv[/cyan]")
+        console.print(f"[cyan]• Messages Sent Log: session_data/messages_sent.csv[/cyan]")
         console.print(f"[cyan]• Lead Review Queue: session_data/queue.json[/cyan]")
+
+        # Clean up temporary screenshots if configured
+        if settings.cleanup_screenshots_on_exit:
+            session_logger.cleanup_screenshots()
+
         await browser_controller.close()
 
 if __name__ == "__main__":

@@ -30,10 +30,19 @@ class AgentSettings(BaseModel):
     groq_api_key: str = Field(default=os.getenv("GROQ_API_KEY", ""))
     groq_model: str = Field(default=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"))
 
+    # Alternative LLM: OpenRouter API
+    openrouter_api_key: str = Field(default=os.getenv("OPENROUTER_API_KEY", ""))
+    openrouter_model: str = Field(default=os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct"))
+    openrouter_base_url: str = Field(default=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"))
+
     # Fallback LLM: Local Ollama
     ollama_enabled: bool = Field(default=os.getenv("OLLAMA_ENABLED", "false").lower() == "true")
     ollama_base_url: str = Field(default=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"))
     ollama_model: str = Field(default=os.getenv("OLLAMA_MODEL", "llama3:latest"))
+
+    # Navigation Controls
+    auto_next_reel: bool = Field(default=os.getenv("AUTO_NEXT_REEL", "true").lower() == "true")
+    cleanup_screenshots_on_exit: bool = Field(default=os.getenv("CLEANUP_SCREENSHOTS_ON_EXIT", "true").lower() == "true")
 
     # Safety limits
     human_in_the_loop: bool = Field(default=os.getenv("HUMAN_IN_THE_LOOP", "true").lower() == "true")

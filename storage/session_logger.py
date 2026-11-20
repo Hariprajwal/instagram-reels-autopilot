@@ -13,6 +13,7 @@ class SessionLogger:
         self.prospects: List[ProspectAnalysis] = []
         self.report_file = self.session_dir / "session_report.json"
         self.csv_file = self.session_dir / "session_leads.csv"
+        self.messages_file = self.session_dir / "messages_sent.csv"
         self.queue_file = self.session_dir / "queue.json"
         self._init_csv()
         self.load_queue()
@@ -22,9 +23,18 @@ class SessionLogger:
             with open(self.csv_file, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow([
-                    "Timestamp", "Reel ID", "Username", "Comment", "Intent",
-                    "Message Available", "DM Permission", "Decision", "Reasoning",
-                    "Suggested Question", "Approved"
+                    "Timestamp", "Reel ID", "Reel URL", "Username", "Profile URL",
+                    "Comment", "Intent", "Message Available", "DM Permission",
+                    "Decision", "Reasoning", "Suggested Question", "Approved"
+                ])
+
+        if not self.messages_file.exists():
+            with open(self.messages_file, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "Timestamp", "Reel ID", "Reel URL", "Username", "Profile URL",
+                    "Original Comment", "Message 1 (Quote)", "Message 2 (Reaction/Question)",
+                    "Message 3 (Followup)", "Status"
                 ])
 
     def record_reel_inspected(self):
@@ -44,7 +54,7 @@ class SessionLogger:
             self.stats.unavailable_profiles += 1
         self.stats.last_updated = datetime.now()
 
-    def record_analysis(self, analysis: ProspectAnalysis):
+    def record_analysis(self, analysis: ProspectAnalysis, reel_url: Optional[str] = None):
         self.prospects.append(analysis)
 
         # Update stats
@@ -65,13 +75,19 @@ class SessionLogger:
 
         self.stats.last_updated = datetime.now()
 
+        # Construct full Instagram profile and Reel URLs
+        profile_url = f"https://www.instagram.com/{analysis.username}/"
+        final_reel_url = reel_url or f"https://www.instagram.com/reel/{analysis.reel_id}/"
+
         # Append to CSV
         with open(self.csv_file, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([
                 analysis.analyzed_at.strftime("%Y-%m-%d %H:%M:%S"),
                 analysis.reel_id,
+                final_reel_url,
                 analysis.username,
+                profile_url,
                 analysis.comment_text,
                 analysis.comment_intent.value,
                 analysis.message_availability.value,
@@ -83,6 +99,54 @@ class SessionLogger:
             ])
 
         self.save_report()
+
+    def record_message_sent(
+        self,
+        reel_id: str,
+        reel_url: str,
+        username: str,
+        comment_text: str,
+        messages: List[str],
+        status: str = "DELIVERED"
+    ):
+        """Dedicated log for all multi-message sequences dispatched to Instagram users."""
+        profile_url = f"https://www.instagram.com/{username}/"
+        final_reel_url = reel_url if "http" in reel_url else f"https://www.instagram.com/reel/{reel_id}/"
+
+        msg1 = messages[0] if len(messages) > 0 else ""
+        msg2 = messages[1] if len(messages) > 1 else ""
+        msg3 = messages[2] if len(messages) > 2 else ""
+
+        with open(self.messages_file, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                reel_id,
+                final_reel_url,
+                username,
+                profile_url,
+                comment_text,
+                msg1,
+                msg2,
+                msg3,
+                status
+            ])
+        print(f"[SessionLogger] Logged message sequence to: {self.messages_file.name}")
+
+    def cleanup_screenshots(self):
+        """Cleans up temporary screenshot image files on session completion to save disk space."""
+        cleaned_count = 0
+        for sub in ["reels", "profiles"]:
+            sub_dir = self.session_dir / "screenshots" / sub
+            if sub_dir.exists():
+                for p in sub_dir.glob("*.png"):
+                    try:
+                        p.unlink()
+                        cleaned_count += 1
+                    except Exception:
+                        pass
+        if cleaned_count > 0:
+            print(f"[SessionLogger] Cleaned up {cleaned_count} temporary screenshots to free disk space.")
 
     def save_report(self):
         try:

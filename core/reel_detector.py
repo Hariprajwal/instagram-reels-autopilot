@@ -152,3 +152,97 @@ class ReelDetector:
 
             await asyncio.sleep(0.8)
 
+    async def navigate_to_next_reel(self) -> bool:
+        """
+        Navigates to the next Reel when all comments on the current Reel are finished.
+        Locates the circular Down Arrow button on the right side of the Reel view
+        and dispatches mousedown + mouseup + click events, with keyboard fallback (PageDown/ArrowDown).
+        """
+        print("\n[ReelDetector] ⚡ All comments finished. Navigating to NEXT Reel via Down Arrow...")
+
+        # Selectors for the down arrow button on Instagram Reels
+        down_selectors = [
+            "div[role='button']:has(svg[aria-label*='Down'])",
+            "div[role='button']:has(svg[aria-label*='down'])",
+            "div[role='button']:has(svg[aria-label*='Next'])",
+            "div[role='button']:has(svg[aria-label*='next'])",
+            "button:has(svg[aria-label*='Down'])",
+            "button:has(svg[aria-label*='Next'])",
+            "svg[aria-label*='Down']",
+            "svg[aria-label*='Next']"
+        ]
+
+        clicked = False
+        for sel in down_selectors:
+            try:
+                btn = await self.page.wait_for_selector(sel, timeout=1200, state="visible")
+                if btn:
+                    box = await btn.bounding_box()
+                    if box and box["x"] > 350:  # Ensure it's on the right side of the viewport
+                        await self.page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                        await self.page.mouse.down()
+                        await asyncio.sleep(0.12)
+                        await self.page.mouse.up()
+                        await btn.click()
+                        print(f"[ReelDetector] Clicked Down Arrow button ({sel}).")
+                        clicked = True
+                        break
+            except Exception:
+                continue
+
+        # JavaScript fallback: target the circular navigation button on the right edge
+        if not clicked:
+            js_click_down = """
+            () => {
+                const elements = Array.from(document.querySelectorAll('div[role="button"], button'));
+                const midX = window.innerWidth / 2;
+                // Filter to circular or right-positioned navigation buttons
+                const rightButtons = elements.filter(el => {
+                    const rect = el.getBoundingClientRect();
+                    return rect.width >= 24 && rect.width <= 75 && rect.height >= 24 && rect.height <= 75 && rect.left > midX;
+                });
+
+                // Find the one lowest on Y axis (the down arrow)
+                let downBtn = null;
+                let maxY = -1;
+                for (const b of rightButtons) {
+                    const rect = b.getBoundingClientRect();
+                    if (rect.top > maxY) {
+                        maxY = rect.top;
+                        downBtn = b;
+                    }
+                }
+
+                if (downBtn) {
+                    const rect = downBtn.getBoundingClientRect();
+                    const evtDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 });
+                    const evtUp = new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 });
+                    const evtClick = new MouseEvent('click', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 });
+                    downBtn.dispatchEvent(evtDown);
+                    downBtn.dispatchEvent(evtUp);
+                    downBtn.dispatchEvent(evtClick);
+                    return true;
+                }
+                return false;
+            }
+            """
+            try:
+                res = await self.page.evaluate(js_click_down)
+                if res:
+                    print("[ReelDetector] Dispatched mousedown/click on Down Arrow via DOM evaluation.")
+                    clicked = True
+            except Exception as e:
+                print(f"[ReelDetector] JS Down Arrow click notice: {e}")
+
+        # Always emit keyboard PageDown and ArrowDown as standard fallback
+        try:
+            await self.page.keyboard.press("PageDown")
+            await asyncio.sleep(0.3)
+            await self.page.keyboard.press("ArrowDown")
+            print("[ReelDetector] Emitted PageDown/ArrowDown keypress to advance Reel.")
+        except Exception:
+            pass
+
+        await asyncio.sleep(1.5)
+        return True
+

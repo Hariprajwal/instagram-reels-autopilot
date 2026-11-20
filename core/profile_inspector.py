@@ -247,33 +247,53 @@ class ProfileInspector:
                 continue
         return None
 
-    async def draft_or_send_message(self, question: str, auto_send: bool = True) -> bool:
+    async def send_message_sequence(self, messages: list, auto_send: bool = True) -> bool:
         """
-        Types the prepared question into the open chat drawer and sends it
-        by pressing Enter and/or clicking the 'Send' button.
+        Sends a multi-message sequence into the open DM drawer:
+        1. Message 1: The commenter's original comment (quoted for context).
+        2. Message 2: Personalized reaction / question.
+        3. Message 3 (Optional): Short friendly follow-up.
         """
+        if not messages:
+            return False
+
         input_el = await self._find_chat_input()
         if not input_el:
             print("[ProfileInspector] Could not find chat message input box.")
             return False
 
         try:
-            await input_el.click()
-            await asyncio.sleep(0.3)
-            # Type naturally with keystroke delay
-            await input_el.type(question, delay=25)
-            await asyncio.sleep(0.8)
+            for idx, msg in enumerate(messages, 1):
+                clean_msg = (msg or "").strip()
+                if not clean_msg:
+                    continue
 
-            if auto_send:
-                print(f"[ProfileInspector] Sending message to prospect: \"{question}\"")
-                sent = await self._dispatch_send_action(input_el=input_el)
-                return sent
-            else:
-                print(f"[ProfileInspector] Message drafted in Chrome chat box: \"{question}\"")
-                return True
+                print(f"[ProfileInspector] Typing Message {idx}/{len(messages)}: \"{clean_msg}\"")
+                current_input = await self._find_chat_input() or input_el
+                await current_input.click()
+                await asyncio.sleep(0.3)
+                await current_input.type(clean_msg, delay=25)
+                await asyncio.sleep(0.6)
+
+                if auto_send:
+                    await self._dispatch_send_action(input_el=current_input)
+                    if idx < len(messages):
+                        print("[ProfileInspector] Natural pause between messages...")
+                        await asyncio.sleep(1.4)
+                else:
+                    print(f"[ProfileInspector] Message {idx} drafted in Chrome chat box.")
+
+            return True
         except Exception as e:
-            print(f"[ProfileInspector] Error typing/sending message: {e}")
+            print(f"[ProfileInspector] Error typing/sending message sequence: {e}")
             return False
+
+    async def draft_or_send_message(self, question: str, auto_send: bool = True) -> bool:
+        """
+        Types the prepared question into the open chat drawer and sends it
+        by pressing Enter and/or clicking the 'Send' button.
+        """
+        return await self.send_message_sequence([question], auto_send=auto_send)
 
     async def _dispatch_send_action(self, input_el=None) -> bool:
         """

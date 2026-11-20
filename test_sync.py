@@ -46,10 +46,13 @@ sm.mark_user_processed("growth_seeker", "reel_01", analysisA.decision.value)
 print("  [Scenario A: Explicit DM Request]")
 print(f"    Decision: {analysisA.decision.value} (Expected: ELIGIBLE)")
 print(f"    DM Permission: {analysisA.dm_permission.value}")
-print(f"    Suggested Question: '{analysisA.suggested_question}'")
+print(f"    Message Sequence (Length={len(analysisA.message_sequence)}):")
+for i, m in enumerate(analysisA.message_sequence, 1):
+    print(f"      Msg {i}: {m}")
 assert analysisA.decision == DecisionClassification.ELIGIBLE
 assert analysisA.suggested_question is not None
-assert analysisA.suggested_question.count("?") <= 1
+assert len(analysisA.message_sequence) >= 2
+assert analysisA.message_sequence[0] == '"This workflow is insane! DM me the pricing and setup details please."'
 print("    >>> PASS ✓\n", flush=True)
 
 # Scenario B: Engaged commenter with Message Button (Hindi / Reel reaction) -> ELIGIBLE
@@ -113,8 +116,16 @@ assert sm.is_user_processed("anti_spam")
 assert not sm.is_user_processed("uncontacted_lead")
 print("    >>> PASS ✓\n", flush=True)
 
-# Session Stats Verification
-print("  [Session Statistics Verification]")
+# Session Stats & Message Logging Verification
+print("  [Session Stats & Dedicated Message Log Verification]")
+sl.record_message_sent(
+    reel_id="reel_01",
+    reel_url="https://www.instagram.com/reel/reel_01/",
+    username="growth_seeker",
+    comment_text="This workflow is insane! DM me the pricing and setup details please.",
+    messages=analysisA.message_sequence
+)
+assert sl.messages_file.exists()
 print(f"    Eligible Conversations: {sl.stats.eligible_conversations}")
 print(f"    Questions Prepared: {sl.stats.questions_prepared}")
 print(f"    Do Not Contact: {sl.stats.do_not_contact_profiles}")

@@ -72,6 +72,7 @@ class ProspectAnalysis(BaseModel):
     decision: DecisionClassification
     reasoning: str
     suggested_question: Optional[str] = None
+    message_sequence: List[str] = Field(default_factory=list)
     approved_by_user: bool = False
     message_sent: bool = False
     analyzed_at: datetime = Field(default_factory=datetime.now)
