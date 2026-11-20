@@ -47,7 +47,21 @@ class ReelDetector:
                 }
             }
 
-            // If reelId wasn't in URL, use video src or active element signature
+            // If reelId wasn't in URL, find permalink inside the active reel container
+            if (!reelId && activeVideo) {
+                const container = activeVideo.closest('article') || activeVideo.closest('div[role="presentation"]') || activeVideo.parentElement?.parentElement;
+                if (container) {
+                    const reelLink = container.querySelector('a[href*="/reel/"], a[href*="/reels/"]');
+                    if (reelLink) {
+                        const m = (reelLink.getAttribute('href') || '').match(/\/(?:reel|reels)\/([A-Za-z0-9_-]+)/);
+                        if (m && m[1]) {
+                            reelId = m[1];
+                        }
+                    }
+                }
+            }
+
+            // Fallback to video src hash if no permalink in DOM
             if (!reelId && activeVideo) {
                 const src = activeVideo.getAttribute('src') || '';
                 reelId = 'vid_' + Math.abs(src.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0)).toString(16);
