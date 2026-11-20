@@ -114,10 +114,11 @@ class ReelDetector:
                 "caption": ""
             }
 
-    async def wait_for_user_to_settle_on_reel(self) -> ReelContext:
+    async def wait_for_user_to_settle_on_reel(self, state_manager=None) -> ReelContext:
         """
-        Continuously monitors user manual scrolling.
-        Only returns when the user has settled on a Reel for 15 uninterrupted seconds.
+        Continuously monitors user manual scrolling or automatic navigation.
+        Only returns when settled on an uninspected Reel for cooldown seconds.
+        If the current Reel was already processed, automatically advances past it.
         """
         cooldown = settings.reel_cooldown_seconds
         print(f"\n[ReelDetector] Waiting for user to scroll and settle on a Reel for {cooldown:.0f} seconds...")
@@ -129,9 +130,19 @@ class ReelDetector:
             info = await self.get_active_reel_info()
             detected_id = info["reel_id"]
 
+            # If this reel was already processed in this session, immediately skip past it
+            if state_manager and detected_id and not detected_id.startswith("unknown") and state_manager.is_reel_processed(detected_id):
+                print(f"[ReelDetector] Reel [{detected_id}] has already been investigated. Auto-advancing past it...")
+                await self.navigate_to_next_reel()
+                await asyncio.sleep(1.2)
+                last_seen_id = None
+                settle_start_time = None
+                continue
+
             if detected_id != last_seen_id:
                 # Reel changed or user scrolled!
                 last_seen_id = detected_id
+                self.current_reel_id = detected_id
                 settle_start_time = time.time()
                 print(f"[ReelDetector] Detected Reel change: [{detected_id}]. Starting {cooldown:.0f}s cooldown timer...")
             else:
@@ -143,7 +154,7 @@ class ReelDetector:
                     if int(remaining) % 3 == 0 and remaining > 1:
                         print(f"[ReelDetector] Settle progress: {elapsed:.1f}s / {cooldown:.0f}s (Reel: {detected_id})")
                 else:
-                    # Settled for full 15 seconds!
+                    # Settled for full cooldown period!
                     print(f"[ReelDetector] Reel [{detected_id}] has settled ({cooldown:.0f}s reached)! Confirming fully loaded...")
                     await asyncio.sleep(1.0)  # Brief buffer for DOM stability
 
@@ -159,6 +170,7 @@ class ReelDetector:
 
                     # Fresh info grab
                     final_info = await self.get_active_reel_info()
+                    self.current_reel_id = final_info["reel_id"]
                     return ReelContext(
                         reel_id=final_info["reel_id"],
                         url=final_info["url"],
@@ -174,12 +186,17 @@ class ReelDetector:
         """
         Navigates to the next Reel when all comments on the current Reel are finished.
         Uses the proven Instagram shortcut:
-        1. Focuses the active Reel video area / body.
-        2. Emits 'ArrowDown' keypress.
-        3. Emits 'Enter' keypress to advance directly to the next Reel.
-        4. Fallback: Clicks the circular Down Arrow button and emits PageDown.
+        1. Focuses the active Reel video area.
+        2. Emits 'ArrowDown' -> 'Enter' shortcut.
+        3. Clicks the circular Down Arrow button (shown in UI) if needed.
+        4. Verifies active Reel changes to a new ID before completing.
         """
-        print("\n[ReelDetector] ⚡ All comments finished. Navigating to NEXT Reel via [Down Arrow -> Enter] shortcut...")
+        previous_id = self.current_reel_id
+        if not previous_id or previous_id.startswith("unknown"):
+            info = await self.get_active_reel_info()
+            previous_id = info["reel_id"]
+
+        print(f"\n[ReelDetector] ⚡ All comments finished. Navigating to NEXT Reel from [{previous_id}] via [Down Arrow -> Enter] shortcut...")
 
         # Step 1: Ensure active focus is on the Reel container
         try:
@@ -208,44 +225,78 @@ class ReelDetector:
             await asyncio.sleep(0.2)
             await self.page.keyboard.press("Enter")
             print("[ReelDetector] Triggered shortcut: [ArrowDown -> Enter] to advance Reel.")
-            await asyncio.sleep(0.6)
         except Exception as e:
-            print(f"[ReelDetector] Shortcut execution error: {e}")
+            print(f"[ReelDetector] Shortcut execution notice: {e}")
 
-        # Step 3: Button click & PageDown fallback (if needed)
-        down_selectors = [
-            "div[role='button']:has(svg[aria-label*='Down'])",
-            "div[role='button']:has(svg[aria-label*='down'])",
-            "div[role='button']:has(svg[aria-label*='Next'])",
-            "div[role='button']:has(svg[aria-label*='next'])",
-            "button:has(svg[aria-label*='Down'])",
-            "button:has(svg[aria-label*='Next'])",
-            "svg[aria-label*='Down']",
-            "svg[aria-label*='Next']"
-        ]
+        # Step 3: Check if the Reel changed to a new ID
+        for _ in range(6):
+            await asyncio.sleep(0.5)
+            check = await self.get_active_reel_info()
+            new_id = check["reel_id"]
+            if new_id and new_id != previous_id and not new_id.startswith("unknown"):
+                print(f"[ReelDetector] ✓ Successfully advanced to next Reel: [{new_id}]")
+                self.current_reel_id = new_id
+                return True
 
-        for sel in down_selectors:
-            try:
-                btn = await self.page.wait_for_selector(sel, timeout=300, state="visible")
-                if btn:
-                    box = await btn.bounding_box()
-                    if box and box["x"] > 350:
-                        await self.page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                        await self.page.mouse.down()
-                        await asyncio.sleep(0.08)
-                        await self.page.mouse.up()
-                        await btn.click()
-                        print(f"[ReelDetector] Dispatched Down Arrow button click fallback ({sel}).")
-                        break
-            except Exception:
-                continue
+        # Step 4: Circular Down Arrow button click fallback (targets the round white down-arrow button)
+        print("[ReelDetector] Shortcut verification pending. Dispatching circular Down Arrow button click fallback...")
+        js_click_down_arrow = """
+        () => {
+            const buttons = Array.from(document.querySelectorAll('div[role="button"], button'));
+            for (const b of buttons) {
+                const rect = b.getBoundingClientRect();
+                // Check if button is on the right side of the video player
+                if (rect.width > 24 && rect.width < 75 && rect.height > 24 && rect.height < 75 && rect.right > window.innerWidth / 3) {
+                    const svg = b.querySelector('svg');
+                    if (svg) {
+                        const aria = (svg.getAttribute('aria-label') || b.getAttribute('aria-label') || '').toLowerCase();
+                        if (aria.includes('down') || aria.includes('next') || aria.includes('below')) {
+                            b.click();
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+        """
+        try:
+            clicked = await self.page.evaluate(js_click_down_arrow)
+            if not clicked:
+                down_selectors = [
+                    "div[role='button']:has(svg[aria-label*='Down'])",
+                    "div[role='button']:has(svg[aria-label*='down'])",
+                    "div[role='button']:has(svg[aria-label*='Next'])",
+                    "button:has(svg[aria-label*='Down'])",
+                    "button:has(svg[aria-label*='Next'])"
+                ]
+                for sel in down_selectors:
+                    try:
+                        btn = await self.page.wait_for_selector(sel, timeout=400, state="visible")
+                        if btn:
+                            await btn.click()
+                            break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
 
-        # Step 4: Keyboard PageDown fallback
+        # Step 5: PageDown as final fallback
         try:
             await self.page.keyboard.press("PageDown")
         except Exception:
             pass
 
-        await asyncio.sleep(1.2)
+        # Final verification wait
+        for _ in range(5):
+            await asyncio.sleep(0.4)
+            check = await self.get_active_reel_info()
+            new_id = check["reel_id"]
+            if new_id and new_id != previous_id and not new_id.startswith("unknown"):
+                print(f"[ReelDetector] ✓ Successfully locked to next Reel: [{new_id}]")
+                self.current_reel_id = new_id
+                return True
+
+        print(f"[ReelDetector] Advance signal completed (current: [{self.current_reel_id}]).")
         return True
 

@@ -52,8 +52,8 @@ async def run_agent():
 
     try:
         while True:
-            # 1. Wait for user to scroll and settle for 15 seconds
-            reel_context = await reel_detector.wait_for_user_to_settle_on_reel()
+            # 1. Wait for user to scroll and settle for 15 seconds (auto-skips already-processed reels)
+            reel_context = await reel_detector.wait_for_user_to_settle_on_reel(state_manager=state_manager)
 
             console.print(f"\n[bold magenta]════════════════════════════════════════════════════════════[/bold magenta]")
             console.print(f"[bold white]Inspecting Reel:[/bold white] [cyan]{reel_context.reel_id}[/cyan] by @[yellow]{reel_context.author}[/yellow]")

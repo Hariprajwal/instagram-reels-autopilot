@@ -108,30 +108,58 @@ class BrowserController:
     async def check_security_checkpoint(self) -> bool:
         """
         Detects if Meta/Instagram has presented a reCAPTCHA, challenge, or security checkpoint.
+        Inspects URL, active frames, and page DOM for Meta reCAPTCHA Enterprise indicators.
         Returns True if a challenge/checkpoint is detected.
         """
         page = await self.get_page()
         current_url = page.url.lower()
 
-        # Check URL indicators
-        if any(term in current_url for term in ["/challenge/", "/checkpoint/", "recaptcha"]):
+        # 1. Check URL indicators
+        url_triggers = ["/challenge/", "/checkpoint/", "recaptcha", "security_check", "help/checkpoint"]
+        if any(term in current_url for term in url_triggers):
             return True
 
-        # Check DOM indicators from selectors.json
-        security_selectors = self.selectors.get("security", {}).get("checkpoint_indicators", [
-            "iframe[src*='recaptcha']",
-            "iframe[title*='reCAPTCHA']",
-            ":text('I\\'m not a robot')",
-            ":text('Help us confirm you own this account')",
-            ":text('Suspicious activity')"
-        ])
-
-        for selector in security_selectors:
-            try:
-                if await page.is_visible(selector, timeout=600):
+        # 2. Check all active frames (reCAPTCHA Enterprise renders in cross-origin frames)
+        try:
+            for frame in page.frames:
+                frame_url = frame.url.lower()
+                if any(k in frame_url for k in ["recaptcha", "hcaptcha", "/challenge/", "/checkpoint/"]):
                     return True
-            except Exception:
-                continue
+        except Exception:
+            pass
+
+        # 3. Check page body text for Meta reCAPTCHA Enterprise phrases
+        js_check_checkpoint = """
+        () => {
+            const text = (document.body ? document.body.innerText : '').toLowerCase();
+            const triggers = [
+                'combat harmful conduct',
+                'recaptcha enterprise',
+                "i'm not a robot",
+                'confirm it\\'s you',
+                'help us confirm you own this account',
+                'suspicious activity',
+                'checkpoint_required',
+                'unusual activity',
+                'confirm your info',
+                'security check'
+            ];
+            for (const t of triggers) {
+                if (text.includes(t)) return true;
+            }
+
+            // Check if reCAPTCHA iframe or container is present
+            const recaptchaEl = document.querySelector('iframe[src*="recaptcha"], iframe[title*="reCAPTCHA"], div.g-recaptcha, .recaptcha-checkbox');
+            if (recaptchaEl) return true;
+
+            return false;
+        }
+        """
+        try:
+            if await page.evaluate(js_check_checkpoint):
+                return True
+        except Exception:
+            pass
 
         return False
 
@@ -143,13 +171,14 @@ class BrowserController:
         if not await self.check_security_checkpoint():
             return True
 
-        print("\n" + "=" * 70)
+        print("\a", end="", flush=True)  # System bell for audible notification
+        print("\n" + "═" * 74)
         print(" [SECURITY CHECKPOINT / CAPTCHA DETECTED]")
-        print(" Meta/Instagram has requested verification ('I'm not a robot' / reCAPTCHA).")
-        print(" Automation has paused to safeguard your account.")
+        print(" Meta/Instagram has presented an 'I'm not a robot' / reCAPTCHA challenge.")
+        print(" Automation is safely paused to safeguard your Instagram account.")
         print(" >>> PLEASE SOLVE THE VERIFICATION MANUALLY IN YOUR CHROME WINDOW <<<")
-        print(" The agent is waiting and will resume automatically once cleared...")
-        print("=" * 70 + "\n")
+        print(" The agent is on standby and will automatically resume once cleared...")
+        print("═" * 74 + "\n")
 
         while True:
             await asyncio.sleep(poll_interval)

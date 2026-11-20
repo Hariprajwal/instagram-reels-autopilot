@@ -184,13 +184,34 @@ class CommentReader:
     async def click_commenter_profile(self, username: str) -> bool:
         """
         Finds and clicks the specific commenter's username link inside comments.
-        If DOM click does not transition to the profile, smoothly navigates directly
-        to guarantee the profile opens every time without failing.
+        Tries native Playwright locator click first to trigger client-side SPA routing,
+        then JavaScript event click, and finally direct URL navigation as fail-safe.
         """
         clean_user = username.strip().lstrip("@").lower()
         print(f"[CommentReader] Opening profile for @{clean_user}...")
 
-        # 1. Search and click username element inside comments dialog
+        # 1. Native Playwright locator click (triggers natural React router navigation without full reload)
+        link_selectors = [
+            f"div[role='dialog'] a[href*='/{clean_user}']",
+            f"a[role='link'][href*='/{clean_user}']",
+            f"a[href='/{clean_user}/']",
+            f"a[href='/{clean_user}']"
+        ]
+        for sel in link_selectors:
+            try:
+                link = self.page.locator(sel).first
+                if await link.is_visible(timeout=400):
+                    await link.scroll_into_view_if_needed()
+                    await asyncio.sleep(0.15)
+                    await link.click(timeout=1000)
+                    for _ in range(6):
+                        await asyncio.sleep(0.3)
+                        if clean_user in self.page.url.lower():
+                            return True
+            except Exception:
+                continue
+
+        # 2. Search and click username element inside comments dialog via DOM
         js_click_user = f"""
         () => {{
             const targetUser = '{clean_user}'.toLowerCase();
@@ -224,12 +245,12 @@ class CommentReader:
         except Exception as e:
             print(f"[CommentReader] Error clicking user link: {e}")
 
-        # 2. FAIL-SAFE: Direct profile navigation so investigation never stalls
+        # 3. FAIL-SAFE: Direct profile navigation so investigation never stalls
         profile_url = f"https://www.instagram.com/{clean_user}/"
         print(f"[CommentReader] Navigating directly to profile: {profile_url}")
         try:
             await self.page.goto(profile_url, wait_until="domcontentloaded")
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(1.2)
             return True
         except Exception as e:
             print(f"[CommentReader] Direct navigation error: {e}")

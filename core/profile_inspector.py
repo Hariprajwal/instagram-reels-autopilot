@@ -28,6 +28,13 @@ class ProfileInspector:
                     if await self.page.is_visible(s, timeout=500):
                         await asyncio.sleep(0.5)
                         return True
+            # Also check if profile elements like Follow or Message buttons are visible
+            try:
+                if await self.page.is_visible("header button, main button, button:has-text('Follow'), button:has-text('Message')", timeout=300):
+                    await asyncio.sleep(0.4)
+                    return True
+            except Exception:
+                pass
             await asyncio.sleep(0.4)
 
         return False
@@ -75,7 +82,7 @@ class ProfileInspector:
             // Check Message Button (comprehensive multi-language & icon search)
             let hasMessageBtn = false;
             const messageKeywords = ['message', 'send message', 'direct', 'mensaje', 'mensagem', 'nachricht', 'invia un messaggio', 'संदेश', 'dm', 'contact'];
-            const candidateElements = Array.from(document.querySelectorAll('header button, header div[role="button"], header a, main header button, main header div[role="button"], main header a'));
+            const candidateElements = Array.from(document.querySelectorAll('header button, header div[role="button"], header a, main button, main div[role="button"], main a, section button, section div[role="button"]'));
             
             for (const el of candidateElements) {
                 const text = (el.innerText || '').trim().toLowerCase();

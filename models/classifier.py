@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import random
 import asyncio
 from typing import Optional, Tuple, Any
 
@@ -13,7 +14,7 @@ from models.schemas import (
     ProspectAnalysis
 )
 
-ANALYSIS_SYSTEM_PROMPT = """You are an authentic, charismatic Instagram creator communicating directly with followers in DMs.
+ANALYSIS_SYSTEM_PROMPT = """You are an authentic, highly charismatic Instagram creator communicating directly with followers in DMs.
 Your job is to inspect an Instagram Reel comment and the commenter's profile to evaluate:
 1. Comment Intent: (EXPLICITLY_INTERESTED, ASKING_FOR_INFO, PURCHASE_INTENT, COLLABORATION, CASUAL_ENGAGEMENT, UNRELATED, UNCERTAIN)
 2. Explicit DM Permission: (EXPLICIT_INVITATION, EXISTING_PERMISSION, NO_EXPLICIT_PERMISSION, EXPLICIT_REFUSAL)
@@ -26,15 +27,17 @@ Your job is to inspect an Instagram Reel comment and the commenter's profile to 
    - DO_NOT_CONTACT: The person refuses messages or has opted out.
    - UNCERTAIN: Insufficient evidence.
 4. Human Multi-Message Generation (ONLY if ELIGIBLE):
-   Write like an authentic, charismatic, witty human creator chatting directly with a follower. Maximize creativity and emotional intelligence.
+   Write with MAXIMUM creativity, wit, unpredictability, and authentic emotional intelligence.
+   Every single message must feel genuinely handwritten by a real person, not an AI template.
    
    STRICT ANTI-ROBOT RULES:
    - NEVER use corporate or generic marketing clichés: DO NOT say "Let me know your thoughts", "Let me know what you think", "Hope you're having a great day", "What was your favorite part", "Thanks for reaching out", "Happy to help", or "Hope this helps".
-   - Talk like a real, cool, authentic person on Instagram DMs. Match their language and vibe (English, casual slang, Hinglish, emojis).
+   - Talk like a real, cool, authentic person on Instagram DMs. Match their language, vibe, and energy (English, casual slang, Hinglish, emojis).
+   - Never use the same repetitive question structure. Vary your phrasing, tone, and perspective every time.
 
    - message_1_quote: The commenter's exact comment text WITHOUT artificial quotation marks or brackets (e.g. {comment_text}).
    - suggested_question: A thoughtful, high-vibe, hyper-personalized reaction and single question reacting directly to their exact words and the Reel's specific theme (< 25 words, exactly 1 question mark).
-   - message_3_optional: An optional natural short human closing (e.g. "I can drop the link if you want", "That scene was wild haha"), or null if Message 2 is self-contained.
+   - message_3_optional: An optional natural short human closing (e.g. "I can drop the link if you want", "That scene was wild haha"), or null.
 
 Respond strictly in valid JSON matching this schema:
 {
@@ -53,7 +56,7 @@ class MessageSequenceAutomata:
     Finite State Automata for sequencing and validating Instagram DM conversations:
     State 0 (QUOTE): Extracts and cleans the user's raw comment (no artificial quotes).
     State 1 (REACTION): Generates/validates the personalized creative reaction + single question.
-    State 2 (FOLLOWUP): Evaluates optional followup, eliminating canned/generic phrases.
+    State 2 (FOLLOWUP): Evaluates optional followup with ~50% randomized frequency and zero clichés.
     State 3 (OUTPUT): Yields ordered, validated message sequence ready for fast dispatch.
     """
     FORBIDDEN_CLICHES = [
@@ -86,11 +89,13 @@ class MessageSequenceAutomata:
                 raw_msg2 = parts[0].strip() + "?"
             sequence.append(raw_msg2)
 
-        # State 2: Optional Contextual Followup (Filtered for zero generic clichés)
-        raw_msg3 = (data.get("message_3_optional") or "").strip()
-        if raw_msg3 and not any(cliche in raw_msg3.lower() for cliche in cls.FORBIDDEN_CLICHES):
-            if len(raw_msg3) > 3 and raw_msg3 != raw_msg2:
-                sequence.append(raw_msg3)
+        # State 2: Optional Contextual Followup (Randomized ~50% frequency, filtered for zero generic clichés)
+        # Allows Message 3 to be truly optional and dynamic
+        if random.random() < 0.50:
+            raw_msg3 = (data.get("message_3_optional") or "").strip()
+            if raw_msg3 and not any(cliche in raw_msg3.lower() for cliche in cls.FORBIDDEN_CLICHES):
+                if len(raw_msg3) > 3 and raw_msg3 != raw_msg2:
+                    sequence.append(raw_msg3)
 
         return sequence
 
@@ -218,7 +223,8 @@ Bio: {bio_text or "N/A"}
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
-            temperature=0.75,
+            temperature=0.88,
+            top_p=0.95,
             max_tokens=650
         )
         content = response.choices[0].message.content
@@ -232,7 +238,8 @@ Bio: {bio_text or "N/A"}
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
-            temperature=0.75,
+            temperature=0.88,
+            top_p=0.95,
             max_tokens=650
         )
         content = response.choices[0].message.content
