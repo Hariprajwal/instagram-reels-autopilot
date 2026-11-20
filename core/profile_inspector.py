@@ -74,16 +74,38 @@ class ProfileInspector:
             ];
             const isPrivate = privatePhrases.some(p => bodyText.includes(p));
 
-            // Check Message Button
+            // Check Message Button (comprehensive multi-language & icon search)
             let hasMessageBtn = false;
-            const buttons = Array.from(document.querySelectorAll('button, div[role="button"], a[role="link"], a'));
-            for (const b of buttons) {
-                const text = (b.innerText || '').trim();
-                const href = b.getAttribute('href') || '';
-                if (text === 'Message' || text === 'Send message' || href.includes('/direct/t/')) {
+            const messageKeywords = ['message', 'send message', 'direct', 'mensaje', 'mensagem', 'nachricht', 'invia un messaggio', 'संदेश', 'dm', 'contact'];
+            const candidateElements = Array.from(document.querySelectorAll('header button, header div[role="button"], header a, main header button, main header div[role="button"], main header a'));
+            
+            for (const el of candidateElements) {
+                const text = (el.innerText || '').trim().toLowerCase();
+                const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+                const href = (el.getAttribute('href') || '').toLowerCase();
+                
+                // Direct link check
+                if (href.includes('/direct/t/') || href.includes('/direct/new/') || href.includes('/direct/')) {
                     hasMessageBtn = true;
                     break;
                 }
+                
+                // Text or aria-label check
+                if (messageKeywords.some(kw => text === kw || text.includes(kw) || ariaLabel.includes(kw))) {
+                    hasMessageBtn = true;
+                    break;
+                }
+                
+                // SVG inside candidate check
+                const svgs = el.querySelectorAll('svg');
+                for (const svg of svgs) {
+                    const svgAria = (svg.getAttribute('aria-label') || '').toLowerCase();
+                    if (messageKeywords.some(kw => svgAria.includes(kw))) {
+                        hasMessageBtn = true;
+                        break;
+                    }
+                }
+                if (hasMessageBtn) break;
             }
 
             // Check Messaging Restrictions

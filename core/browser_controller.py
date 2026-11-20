@@ -105,6 +105,60 @@ class BrowserController:
                 return True
         return False
 
+    async def check_security_checkpoint(self) -> bool:
+        """
+        Detects if Meta/Instagram has presented a reCAPTCHA, challenge, or security checkpoint.
+        Returns True if a challenge/checkpoint is detected.
+        """
+        page = await self.get_page()
+        current_url = page.url.lower()
+
+        # Check URL indicators
+        if any(term in current_url for term in ["/challenge/", "/checkpoint/", "recaptcha"]):
+            return True
+
+        # Check DOM indicators from selectors.json
+        security_selectors = self.selectors.get("security", {}).get("checkpoint_indicators", [
+            "iframe[src*='recaptcha']",
+            "iframe[title*='reCAPTCHA']",
+            ":text('I\\'m not a robot')",
+            ":text('Help us confirm you own this account')",
+            ":text('Suspicious activity')"
+        ])
+
+        for selector in security_selectors:
+            try:
+                if await page.is_visible(selector, timeout=600):
+                    return True
+            except Exception:
+                continue
+
+        return False
+
+    async def wait_for_user_to_resolve_checkpoint(self, poll_interval: float = 2.0) -> bool:
+        """
+        Pauses automation when a security challenge/CAPTCHA is detected, yields control
+        to the user, and waits until the user manually resolves it in their Chrome window.
+        """
+        if not await self.check_security_checkpoint():
+            return True
+
+        print("\n" + "=" * 70)
+        print(" [SECURITY CHECKPOINT / CAPTCHA DETECTED]")
+        print(" Meta/Instagram has requested verification ('I'm not a robot' / reCAPTCHA).")
+        print(" Automation has paused to safeguard your account.")
+        print(" >>> PLEASE SOLVE THE VERIFICATION MANUALLY IN YOUR CHROME WINDOW <<<")
+        print(" The agent is waiting and will resume automatically once cleared...")
+        print("=" * 70 + "\n")
+
+        while True:
+            await asyncio.sleep(poll_interval)
+            still_blocked = await self.check_security_checkpoint()
+            if not still_blocked:
+                print("\n[SUCCESS] Security check resolved! Resuming investigation...\n")
+                await asyncio.sleep(2.0)
+                return True
+
     async def close(self):
         """Disconnects without closing the user's Chrome window."""
         print("[BrowserController] Detaching from Chrome (browser will stay open)...")

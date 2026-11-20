@@ -208,6 +208,7 @@ Bio: {bio_text or "N/A"}
 
         # Technical Message Availability Check
         is_msg_possible = (message_availability == MessageAvailability.MESSAGE_BUTTON_VISIBLE)
+        mode = getattr(settings, "eligibility_mode", "engaged")
 
         # Decision synthesis
         if not is_msg_possible:
@@ -216,7 +217,14 @@ Bio: {bio_text or "N/A"}
             question = None
         elif has_explicit_dm_invite and is_msg_possible:
             decision = DecisionClassification.ELIGIBLE.value
+            permission = DMPermission.EXPLICIT_INVITATION.value
             reasoning = "User explicitly requested a DM and messaging is technically available."
+            question = self._generate_fallback_question(comment_text, reel_caption)
+        elif is_msg_possible and mode == "engaged":
+            # Growth / Engaged Lead Mode: Profile has open DM and commenter actively engaged with the Reel
+            decision = DecisionClassification.ELIGIBLE.value
+            permission = DMPermission.EXISTING_PERMISSION.value
+            reasoning = f"Profile allows direct messaging and user actively engaged with comment: '{comment_text[:40]}'."
             question = self._generate_fallback_question(comment_text, reel_caption)
         elif has_info_intent:
             decision = DecisionClassification.INTERESTED_BUT_NO_PERMISSION.value
@@ -237,13 +245,17 @@ Bio: {bio_text or "N/A"}
 
     def _generate_fallback_question(self, comment_text: str, reel_caption: Optional[str]) -> str:
         text = comment_text.lower()
-        if "price" in text or "cost" in text or "how much" in text:
+        if "price" in text or "cost" in text or "how much" in text or "kitna" in text:
             return "Hey! Happy to share the pricing—are you looking for individual or team options?"
-        if "link" in text:
+        if "link" in text or "bhejo" in text:
             return "Hey! Glad you reached out—would you like me to send over the direct resource link?"
-        if "how" in text or "details" in text or "info" in text:
+        if "how" in text or "details" in text or "info" in text or "kaise" in text:
             return "Hey! Happy to share more details—what specific part can I help clarify for you?"
-        return "Hey! Thanks for reaching out—what specific question can I answer for you?"
+        if any(w in text for w in ["kr liya", "kar liya", "done", "tried", "maine"]):
+            return "Hey! Saw you tried this out—how was your experience with it?"
+        if any(w in text for w in ["god", "😂", "lol", "kya", "can you", "tum kar", "sakte"]):
+            return "Haha love your comment on the Reel! Have you tried doing this yourself?"
+        return "Hey! Thanks for engaging with the Reel—what was your favorite part about it?"
 
     def _build_analysis_object(
         self,

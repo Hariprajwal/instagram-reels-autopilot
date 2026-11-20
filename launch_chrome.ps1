@@ -51,6 +51,7 @@ Write-Host "Launching Google Chrome on port 9222..." -ForegroundColor Cyan
 Start-Process -FilePath $chromeBin -ArgumentList @(
     "--remote-debugging-port=9222",
     "--remote-allow-origins=*",
+    "--disable-blink-features=AutomationControlled",
     "--restore-last-session",
     "https://www.instagram.com/reels/"
 )

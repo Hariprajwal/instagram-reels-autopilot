@@ -103,6 +103,19 @@
       ":text('You can\\'t message this account unless they follow you')",
       ":text('This account can\\'t receive your message')"
     ]
+  },
+  "security": {
+    "checkpoint_indicators": [
+      "iframe[src*='recaptcha']",
+      "iframe[title*='reCAPTCHA']",
+      "div.g-recaptcha",
+      ":text('I\\'m not a robot')",
+      ":text('Help us confirm you own this account')",
+      ":text('Confirm it\\'s you')",
+      ":text('Suspicious activity')",
+      ":text('Please enter the code we sent')",
+      ":text('checkpoint_required')"
+    ]
   }
 }
 

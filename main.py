@@ -78,6 +78,9 @@ async def run_agent():
                 console.print(f"\n[bold cyan]► Commenter [{processed_count + 1}]:[/bold cyan] @{username}")
                 console.print(f'  Comment: [italic]"{comment.text}"[/italic]')
 
+                # Safety checkpoint check
+                await browser_controller.wait_for_user_to_resolve_checkpoint()
+
                 # 5. Open commenter's profile (Mandatory Step)
                 clicked = await comment_reader.click_commenter_profile(username)
                 if not clicked:
@@ -85,6 +88,8 @@ async def run_agent():
                     profile_data = await profile_inspector.inspect(username)
                 else:
                     await asyncio.sleep(settings.min_action_delay)
+                    # Check if checkpoint appeared on profile load
+                    await browser_controller.wait_for_user_to_resolve_checkpoint()
                     profile_data = await profile_inspector.inspect(username)
 
                 session_logger.record_profile_opened(
@@ -98,11 +103,19 @@ async def run_agent():
                 # 7. Render Prospect Card on Dashboard
                 dashboard.display_prospect_card(analysis)
 
+                if analysis.decision.value == "ELIGIBLE":
+                    console.print(f"\n[bold bright_green]🎯 ELIGIBLE CONVERSATION IDENTIFIED: @{username}![/bold bright_green]")
+                    console.print(f'[bright_green]💬 PREPARED QUESTION: "{analysis.suggested_question}"[/bright_green]')
+                    console.print("[dim]Saved to review queue: session_data/queue.json (Run 'python ui/cli.py' to view/approve)[/dim]\n")
+
                 # 8. Return to exact original Reel and reopen comments
                 await profile_inspector.return_to_reel_and_reopen_comments(
                     reel_url=reel_context.url,
                     comment_reader=comment_reader
                 )
+
+                # Check if checkpoint appeared upon returning
+                await browser_controller.wait_for_user_to_resolve_checkpoint()
 
                 processed_count += 1
                 await asyncio.sleep(settings.min_action_delay)

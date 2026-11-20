@@ -22,8 +22,9 @@ load_dotenv(BASE_DIR / ".env")
 class AgentSettings(BaseModel):
     # Chrome CDP settings
     chrome_cdp_url: str = Field(default=os.getenv("CHROME_CDP_URL", "http://127.0.0.1:9222"))
-    reel_cooldown_seconds: float = Field(default=float(os.getenv("REEL_COOLDOWN_SECONDS", "15.0")))
+    reel_cooldown_seconds: float = Field(default=float(os.getenv("REEL_COOLDOWN_SECONDS", "3.5")))
     navigation_mode: str = Field(default=os.getenv("NAVIGATION_MODE", "in_tab"))  # in_tab or new_tab
+    eligibility_mode: str = Field(default=os.getenv("ELIGIBILITY_MODE", "engaged"))  # engaged or strict
 
     # Primary LLM: Groq API
     groq_api_key: str = Field(default=os.getenv("GROQ_API_KEY", ""))
@@ -40,9 +41,9 @@ class AgentSettings(BaseModel):
     max_comments_per_reel: int = Field(default=int(os.getenv("MAX_COMMENTS_PER_REEL", "25")))
     max_profiles_per_session: int = Field(default=int(os.getenv("MAX_PROFILES_PER_SESSION", "100")))
 
-    # Timing and jitter
-    min_action_delay: float = 1.5
-    max_action_delay: float = 3.8
+    # Timing and jitter (human-like pacing)
+    min_action_delay: float = Field(default=float(os.getenv("MIN_ACTION_DELAY", "2.8")))
+    max_action_delay: float = Field(default=float(os.getenv("MAX_ACTION_DELAY", "5.5")))
     page_load_timeout: float = 20000  # ms
 
     # Selector storage

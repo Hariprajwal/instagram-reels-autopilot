@@ -49,7 +49,7 @@ if "%ERRORLEVEL%"=="0" (
 )
 
 echo Starting Google Chrome with Remote Debugging on port 9222...
-start "" "%CHROME_BIN%" --remote-debugging-port=9222 --remote-allow-origins=* --restore-last-session "https://www.instagram.com/reels/"
+start "" "%CHROME_BIN%" --remote-debugging-port=9222 --remote-allow-origins=* --disable-blink-features=AutomationControlled --restore-last-session "https://www.instagram.com/reels/"
 
 timeout /t 3 /nobreak >nul
 netstat -ano | findstr /R ":9222.*LISTENING" >nul 2>&1

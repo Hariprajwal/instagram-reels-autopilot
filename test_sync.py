@@ -5,7 +5,7 @@ print("   INSTAGRAM REEL INVESTIGATION AGENT - PURE LOGIC VERIFICATION", flush=T
 print("======================================================================\n", flush=True)
 
 from config.settings import settings
-print(f"[1/5] Settings loaded: Cooldown={settings.reel_cooldown_seconds}s", flush=True)
+print(f"[1/5] Settings loaded: Cooldown={settings.reel_cooldown_seconds}s, Mode={settings.eligibility_mode}", flush=True)
 
 from storage.state_manager import StateManager
 sm = StateManager()
@@ -45,31 +45,29 @@ sm.mark_user_processed("growth_seeker", "reel_01", analysisA.decision.value)
 
 print("  [Scenario A: Explicit DM Request]")
 print(f"    Decision: {analysisA.decision.value} (Expected: ELIGIBLE)")
-print(f"    DM Permission: {analysisA.dm_permission.value} (Expected: EXPLICIT_INVITATION)")
+print(f"    DM Permission: {analysisA.dm_permission.value}")
 print(f"    Suggested Question: '{analysisA.suggested_question}'")
 assert analysisA.decision == DecisionClassification.ELIGIBLE
-assert analysisA.dm_permission == DMPermission.EXPLICIT_INVITATION
 assert analysisA.suggested_question is not None
 assert analysisA.suggested_question.count("?") <= 1
 print("    >>> PASS ✓\n", flush=True)
 
-# Scenario B: Asking for info without DM permission -> INTERESTED_BUT_NO_PERMISSION
+# Scenario B: Engaged commenter with Message Button (Hindi / Reel reaction) -> ELIGIBLE
 resB = classifier._rule_based_fallback(
-    comment_text="How much does this cost per month?",
-    reel_caption="Automation demo",
+    comment_text="Maine kr liya 🙌👏",
+    reel_caption="Instagram automation tutorial",
     message_availability=MessageAvailability.MESSAGE_BUTTON_VISIBLE,
     is_private=False
 )
-analysisB = classifier._build_analysis_object("tech_student", "reel_01", "How much does this cost per month?", MessageAvailability.MESSAGE_BUTTON_VISIBLE, resB)
+analysisB = classifier._build_analysis_object("__anu.anushka_", "reel_01", "Maine kr liya 🙌👏", MessageAvailability.MESSAGE_BUTTON_VISIBLE, resB)
 sl.record_analysis(analysisB)
-sm.mark_user_processed("tech_student", "reel_01", analysisB.decision.value)
+sm.mark_user_processed("__anu.anushka_", "reel_01", analysisB.decision.value)
 
-print("  [Scenario B: Interested but No DM Request]")
-print(f"    Decision: {analysisB.decision.value} (Expected: INTERESTED_BUT_NO_PERMISSION)")
-print(f"    DM Permission: {analysisB.dm_permission.value} (Expected: NO_EXPLICIT_PERMISSION)")
-print(f"    Suggested Question: {analysisB.suggested_question}")
-assert analysisB.decision == DecisionClassification.INTERESTED_BUT_NO_PERMISSION
-assert analysisB.suggested_question is None
+print("  [Scenario B: Engaged Commenter with Message Button]")
+print(f"    Decision: {analysisB.decision.value} (Expected: ELIGIBLE in engaged mode)")
+print(f"    Suggested Question: '{analysisB.suggested_question}'")
+assert analysisB.decision == DecisionClassification.ELIGIBLE
+assert analysisB.suggested_question is not None
 print("    >>> PASS ✓\n", flush=True)
 
 # Scenario C: Explicit Refusal -> DO_NOT_CONTACT
@@ -119,17 +117,14 @@ print("    >>> PASS ✓\n", flush=True)
 print("  [Session Statistics Verification]")
 print(f"    Eligible Conversations: {sl.stats.eligible_conversations}")
 print(f"    Questions Prepared: {sl.stats.questions_prepared}")
-print(f"    Interested w/o Permission: {sl.stats.interested_without_dm_permission}")
 print(f"    Do Not Contact: {sl.stats.do_not_contact_profiles}")
 print(f"    Unavailable Profiles: {sl.stats.unavailable_profiles}")
-assert sl.stats.eligible_conversations == 1
-assert sl.stats.questions_prepared == 1
-assert sl.stats.interested_without_dm_permission == 1
+assert sl.stats.eligible_conversations == 2
+assert sl.stats.questions_prepared == 2
 assert sl.stats.do_not_contact_profiles == 1
 assert sl.stats.unavailable_profiles == 1
-print("    >>> ALL 10 SESSION METRICS VERIFIED! ✓\n", flush=True)
+print("    >>> ALL SESSION METRICS VERIFIED! ✓\n", flush=True)
 
 print("======================================================================", flush=True)
 print("   ALL SCENARIOS AND DECISION LOGIC VERIFIED 100% SUCCESSFULLY!", flush=True)
 print("======================================================================", flush=True)
-

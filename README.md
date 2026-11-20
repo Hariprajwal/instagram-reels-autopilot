@@ -105,7 +105,7 @@ python main.py
 ```
 1. The agent connects to your open Chrome window via CDP.
 2. Browse to Instagram Reels (`https://www.instagram.com/reels/`).
-3. Whenever you pause on a Reel for 15 seconds, the agent begins its systematic profile investigation.
+3. Whenever you pause on a Reel for 3.5 seconds (configurable via `REEL_COOLDOWN_SECONDS`), the agent begins its systematic profile investigation.
 
 ---
 
