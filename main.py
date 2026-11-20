@@ -121,6 +121,9 @@ async def run_agent():
                                 console.print(f"[bold green]✓ Message successfully sent to @{username}![/bold green]")
                             else:
                                 console.print(f"[bold cyan]✓ Message drafted in Chrome chat box for @{username} (Review & send in Chrome)[/bold cyan]")
+                        
+                        # Wait 2 seconds so the sent message bubble is clearly visible before closing
+                        await asyncio.sleep(2.0)
                         # Close chat drawer before returning to Reel
                         await profile_inspector.close_chat_dialog()
                     else:

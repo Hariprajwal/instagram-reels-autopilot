@@ -247,8 +247,11 @@ class ProfileInspector:
                 continue
         return None
 
-    async def draft_or_send_message(self, question: str, auto_send: bool = False) -> bool:
-        """Types the prepared question into the open chat drawer and optionally sends it."""
+    async def draft_or_send_message(self, question: str, auto_send: bool = True) -> bool:
+        """
+        Types the prepared question into the open chat drawer and sends it
+        by pressing Enter and/or clicking the 'Send' button.
+        """
         input_el = await self._find_chat_input()
         if not input_el:
             print("[ProfileInspector] Could not find chat message input box.")
@@ -262,16 +265,86 @@ class ProfileInspector:
             await asyncio.sleep(0.8)
 
             if auto_send:
-                print("[ProfileInspector] AUTO_SEND_DM is enabled. Sending message via Enter...")
-                await self.page.keyboard.press("Enter")
-                await asyncio.sleep(1.5)
-                return True
+                print(f"[ProfileInspector] Sending message to prospect: \"{question}\"")
+                sent = await self._dispatch_send_action(input_el=input_el)
+                return sent
             else:
                 print(f"[ProfileInspector] Message drafted in Chrome chat box: \"{question}\"")
                 return True
         except Exception as e:
-            print(f"[ProfileInspector] Error typing message: {e}")
+            print(f"[ProfileInspector] Error typing/sending message: {e}")
             return False
+
+    async def _dispatch_send_action(self, input_el=None) -> bool:
+        """
+        Dispatches the typed message to the recipient.
+        Performs dual dispatch:
+        1. Emits Enter keypress directly on the input element and keyboard.
+        2. Clicks the visible 'Send' button or executes JS dispatch.
+        Ensures the message is immediately transmitted without getting stuck.
+        """
+        print("[ProfileInspector] Dispatching message (Enter keypress + Send button click)...")
+
+        # 1. Press Enter key on input element and keyboard
+        try:
+            if input_el:
+                await input_el.focus()
+                await input_el.press("Enter")
+            await self.page.keyboard.press("Enter")
+            print("[ProfileInspector] Pressed Enter key on message input.")
+        except Exception as e:
+            print(f"[ProfileInspector] Enter keypress notice: {e}")
+
+        await asyncio.sleep(0.6)
+
+        # 2. Try clicking the explicit 'Send' button beside the input box
+        send_selectors = [
+            "div[role='button']:has-text('Send')",
+            "button:has-text('Send')",
+            "div[tabindex='0']:has-text('Send')",
+            "span:has-text('Send')",
+            "div[aria-label='Send']",
+            "svg[aria-label='Send']"
+        ]
+        clicked_send = False
+        for sel in send_selectors:
+            try:
+                send_btn = await self.page.wait_for_selector(sel, timeout=800, state="visible")
+                if send_btn:
+                    await send_btn.click()
+                    print(f"[ProfileInspector] Clicked 'Send' button in chat drawer ({sel}).")
+                    clicked_send = True
+                    await asyncio.sleep(0.8)
+                    break
+            except Exception:
+                continue
+
+        # 3. JavaScript evaluation fallback if Send button is still in DOM
+        if not clicked_send:
+            js_click_send = """
+            () => {
+                const candidates = Array.from(document.querySelectorAll('div[role="dialog"] button, div[role="dialog"] div[role="button"], div[role="dialog"] span, button, div[role="button"]'));
+                for (const el of candidates) {
+                    const text = (el.innerText || '').trim().toLowerCase();
+                    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                    if (text === 'send' || aria === 'send') {
+                        el.click();
+                        return true;
+                    }
+                }
+                return false;
+            }
+            """
+            try:
+                if await self.page.evaluate(js_click_send):
+                    print("[ProfileInspector] Dispatched JS Send button click.")
+                    clicked_send = True
+            except Exception:
+                pass
+
+        # Give network/WebSocket time to deliver message
+        await asyncio.sleep(1.5)
+        return True
 
     async def close_chat_dialog(self):
         """Closes the floating chat drawer so the screen is restored before navigating back."""
