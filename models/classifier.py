@@ -13,11 +13,11 @@ from models.schemas import (
     ProspectAnalysis
 )
 
-ANALYSIS_SYSTEM_PROMPT = """You are an expert Instagram analyst and lead investigator.
+ANALYSIS_SYSTEM_PROMPT = """You are an authentic, charismatic Instagram creator communicating directly with followers in DMs.
 Your job is to inspect an Instagram Reel comment and the commenter's profile to evaluate:
 1. Comment Intent: (EXPLICITLY_INTERESTED, ASKING_FOR_INFO, PURCHASE_INTENT, COLLABORATION, CASUAL_ENGAGEMENT, UNRELATED, UNCERTAIN)
 2. Explicit DM Permission: (EXPLICIT_INVITATION, EXISTING_PERMISSION, NO_EXPLICIT_PERMISSION, EXPLICIT_REFUSAL)
-   CRITICAL: You must NEVER assume a positive or interested comment welcomes a DM. Only comments explicitly asking to be messaged (e.g. "DM me", "send info to my DM", "check inbox") qualify as EXPLICIT_INVITATION.
+   CRITICAL: You must NEVER assume a positive comment welcomes a DM. Only comments explicitly asking to be messaged (e.g. "DM me", "send info to my DM", "check inbox") qualify as EXPLICIT_INVITATION.
 3. Decision:
    - ELIGIBLE: The commenter explicitly welcomes a private message or actively engaged with an open message option.
    - INTERESTED_BUT_NO_PERMISSION: The commenter appears interested but has NOT explicitly invited a DM.
@@ -25,10 +25,16 @@ Your job is to inspect an Instagram Reel comment and the commenter's profile to 
    - UNAVAILABLE: Profile or messaging option cannot be accessed.
    - DO_NOT_CONTACT: The person refuses messages or has opted out.
    - UNCERTAIN: Insufficient evidence.
-4. Message Sequence Generation (ONLY if ELIGIBLE):
-   - message_1_quote: The exact quoted text or short snippet of their original comment so they immediately know why you are messaging (e.g. "{comment_text}").
-   - suggested_question: ONE natural, hyper-personalized reaction and single question reacting directly to their specific comment and Reel context (< 25 words, exactly 1 question mark). No generic marketing buzzwords.
-   - message_3_optional: A very short optional friendly closing (e.g. "Let me know what you think!" or "Happy to share more if you're curious!"), or null if unnecessary.
+4. Human Multi-Message Generation (ONLY if ELIGIBLE):
+   Write like an authentic, charismatic, witty human creator chatting directly with a follower. Maximize creativity and emotional intelligence.
+   
+   STRICT ANTI-ROBOT RULES:
+   - NEVER use corporate or generic marketing clichés: DO NOT say "Let me know your thoughts", "Let me know what you think", "Hope you're having a great day", "What was your favorite part", "Thanks for reaching out", "Happy to help", or "Hope this helps".
+   - Talk like a real, cool, authentic person on Instagram DMs. Match their language and vibe (English, casual slang, Hinglish, emojis).
+
+   - message_1_quote: The commenter's exact comment text WITHOUT artificial quotation marks or brackets (e.g. {comment_text}).
+   - suggested_question: A thoughtful, high-vibe, hyper-personalized reaction and single question reacting directly to their exact words and the Reel's specific theme (< 25 words, exactly 1 question mark).
+   - message_3_optional: An optional natural short human closing (e.g. "I can drop the link if you want", "That scene was wild haha"), or null if Message 2 is self-contained.
 
 Respond strictly in valid JSON matching this schema:
 {
@@ -36,11 +42,57 @@ Respond strictly in valid JSON matching this schema:
   "dm_permission": "EXPLICIT_INVITATION" | "EXISTING_PERMISSION" | "NO_EXPLICIT_PERMISSION" | "EXPLICIT_REFUSAL",
   "decision": "ELIGIBLE" | "INTERESTED_BUT_NO_PERMISSION" | "NOT_INTERESTED" | "UNAVAILABLE" | "DO_NOT_CONTACT" | "UNCERTAIN",
   "reasoning": "Brief explanation of the decision",
-  "message_1_quote": "Quoted comment for context if ELIGIBLE, otherwise null",
-  "suggested_question": "One concise personalized reaction/question if ELIGIBLE, otherwise null",
-  "message_3_optional": "Optional short follow-up or null"
+  "message_1_quote": "Clean raw comment text without quotes if ELIGIBLE, otherwise null",
+  "suggested_question": "Creative, highly personalized human reaction/question if ELIGIBLE, otherwise null",
+  "message_3_optional": "Contextual casual human closing or null"
 }
 """
+
+class MessageSequenceAutomata:
+    """
+    Finite State Automata for sequencing and validating Instagram DM conversations:
+    State 0 (QUOTE): Extracts and cleans the user's raw comment (no artificial quotes).
+    State 1 (REACTION): Generates/validates the personalized creative reaction + single question.
+    State 2 (FOLLOWUP): Evaluates optional followup, eliminating canned/generic phrases.
+    State 3 (OUTPUT): Yields ordered, validated message sequence ready for fast dispatch.
+    """
+    FORBIDDEN_CLICHES = [
+        "let me know your thoughts",
+        "let me know what you think",
+        "what was your favorite part",
+        "hope this helps",
+        "thanks for reaching out",
+        "happy to help",
+        "hope you're having a great day"
+    ]
+
+    @classmethod
+    def process_sequence(cls, comment_text: str, data: dict, fallback_q: str = None) -> list:
+        sequence = []
+
+        # State 0: Raw Comment Quote (Natural, clean, no artificial double quotes)
+        raw_msg1 = (data.get("message_1_quote") or comment_text or "").strip()
+        if (raw_msg1.startswith('"') and raw_msg1.endswith('"')) or (raw_msg1.startswith("'") and raw_msg1.endswith("'")):
+            raw_msg1 = raw_msg1[1:-1].strip()
+        if raw_msg1:
+            sequence.append(raw_msg1)
+
+        # State 1: Creative Personalized Reaction / Question
+        raw_msg2 = (data.get("suggested_question") or fallback_q or "").strip()
+        if raw_msg2:
+            # Enforce One-Question Rule (max 1 question mark)
+            if raw_msg2.count("?") > 1:
+                parts = raw_msg2.split("?")
+                raw_msg2 = parts[0].strip() + "?"
+            sequence.append(raw_msg2)
+
+        # State 2: Optional Contextual Followup (Filtered for zero generic clichés)
+        raw_msg3 = (data.get("message_3_optional") or "").strip()
+        if raw_msg3 and not any(cliche in raw_msg3.lower() for cliche in cls.FORBIDDEN_CLICHES):
+            if len(raw_msg3) > 3 and raw_msg3 != raw_msg2:
+                sequence.append(raw_msg3)
+
+        return sequence
 
 class AIClassifier:
     def __init__(self):
@@ -166,7 +218,7 @@ Bio: {bio_text or "N/A"}
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
-            temperature=0.2,
+            temperature=0.75,
             max_tokens=650
         )
         content = response.choices[0].message.content
@@ -180,7 +232,7 @@ Bio: {bio_text or "N/A"}
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
-            temperature=0.2,
+            temperature=0.75,
             max_tokens=650
         )
         content = response.choices[0].message.content
@@ -263,14 +315,14 @@ Bio: {bio_text or "N/A"}
             permission = DMPermission.EXPLICIT_INVITATION.value
             reasoning = "User explicitly requested a DM and messaging is technically available."
             question = self._generate_fallback_question(comment_text, reel_caption)
-            opt_msg3 = "Happy to send over the link or answer any questions!"
+            opt_msg3 = "I can drop the direct resource link right here if you'd like!"
         elif is_msg_possible and mode == "engaged":
             # Growth / Engaged Lead Mode: Profile has open DM and commenter actively engaged with the Reel
             decision = DecisionClassification.ELIGIBLE.value
             permission = DMPermission.EXISTING_PERMISSION.value
             reasoning = f"Profile allows direct messaging and user actively engaged with comment: '{comment_text[:40]}'."
             question = self._generate_fallback_question(comment_text, reel_caption)
-            opt_msg3 = "Let me know your thoughts!"
+            opt_msg3 = None
         elif has_info_intent:
             decision = DecisionClassification.INTERESTED_BUT_NO_PERMISSION.value
             reasoning = "User expressed interest or asked a question, but did not explicitly invite a DM."
@@ -287,63 +339,62 @@ Bio: {bio_text or "N/A"}
             "dm_permission": permission,
             "decision": decision,
             "reasoning": reasoning,
-            "message_1_quote": f'"{comment_text}"' if decision == DecisionClassification.ELIGIBLE.value else None,
+            "message_1_quote": comment_text.strip() if decision == DecisionClassification.ELIGIBLE.value else None,
             "suggested_question": question,
             "message_3_optional": opt_msg3
         }
 
     def _generate_fallback_question(self, comment_text: str, reel_caption: Optional[str]) -> str:
         text = comment_text.lower().strip()
-        # Seeded variations based on text length / character codes so questions vary naturally
         variant_idx = sum(ord(c) for c in text[:8]) % 3
 
         if "price" in text or "cost" in text or "how much" in text or "kitna" in text:
             options = [
-                "Hey! Happy to share the pricing—are you looking for individual or team options?",
-                "Saw your question on the cost—would you like me to send the breakdown?",
-                "Hey! Glad you asked about pricing—are you planning to get started soon?"
+                "Hey! Are you looking at this for yourself or for your business?",
+                "Saw your question on pricing—curious what you're planning to use it for?",
+                "Hey! Quick question, are you looking to test this out soon?"
             ]
             return options[variant_idx]
         if "link" in text or "bhejo" in text:
             options = [
-                "Hey! Glad you reached out—would you like me to send over the direct resource link?",
-                "Saw you asked for the link—shall I drop it right here for you?",
-                "Happy to share the link—are you looking to check it out right now?"
+                "Hey! Want me to shoot over the link right here?",
+                "Saw you asked for the link—shall I drop it in this chat for you?",
+                "Happy to share it—are you looking to set it up right away?"
             ]
             return options[variant_idx]
         if "how" in text or "details" in text or "info" in text or "kaise" in text:
             options = [
-                "Hey! Happy to share more details—what specific part can I help clarify for you?",
-                "Saw your comment asking about details—which part interested you most?",
-                "Hey! Glad you asked—would you like a quick overview of how this works?"
+                "Saw your comment—which specific step seemed most tricky to you?",
+                "Hey! Which part of the process were you most curious about?",
+                "Curious—have you tried a setup like this before?"
             ]
             return options[variant_idx]
         if any(w in text for w in ["kr liya", "kar liya", "done", "tried", "maine"]):
             options = [
-                "Hey! Saw you tried this out—how was your experience with it?",
-                "Awesome that you did this! Did it work out the way you expected?",
-                "Love that you gave this a shot—what was the most fun part for you?"
+                "Awesome that you gave it a shot! Did it work smoothly for you?",
+                "Love that you tried it! How long did it take you to set up?",
+                "Respect for trying it out—what was the coolest part for you?"
             ]
             return options[variant_idx]
         if any(w in text for w in ["gorgeous", "fire", "nice", "wow", "love", "sahi", "🔥", "❤️", "aww", "super"]):
             options = [
-                f"Love your energy on the Reel! What caught your eye the most?",
-                f"Thanks for the love on the clip! Have you seen something like this before?",
-                f"Haha loved your comment! What was your favorite moment in the video?"
+                "Haha appreciate the love! Are you into this kind of content usually?",
+                "That clip was crazy fun to watch right? What was your take on it?",
+                "Loved your reaction! Have you seen anything like that before?"
             ]
             return options[variant_idx]
         if any(w in text for w in ["god", "😂", "lol", "kya", "can you", "tum kar", "sakte"]):
             options = [
-                "Haha love your comment on the Reel! Have you tried doing this yourself?",
-                "That made me laugh! Did you expect that ending?",
-                "Haha so true! What would you have done in that situation?"
+                "Haha that part made me crack up too! Did you see that coming?",
+                "Right?! What would you have done in that situation?",
+                "That ending was unbelievable haha—did that catch you off guard?"
             ]
             return options[variant_idx]
 
         options = [
-            "Hey! Thanks for engaging with the Reel—what was your favorite part about it?",
-            "Appreciate your comment on the clip! Have you come across this before?",
-            "Hey! Saw your comment on the reel—are you interested in seeing more like this?"
+            "Hey! Saw your comment on the clip—are you into this topic as well?",
+            "Appreciate you stopping by the reel! What caught your eye first?",
+            "Hey! Curious, have you come across something like this before?"
         ]
         return options[variant_idx]
 
@@ -376,27 +427,15 @@ Bio: {bio_text or "N/A"}
         if decision != DecisionClassification.ELIGIBLE:
             question = None
         else:
-            if question:
-                # Enforce One-Question Rule (max 1 question mark)
-                if question.count("?") > 1:
-                    parts = question.split("?")
-                    question = parts[0].strip() + "?"
-
-            # Build Multi-Message Sequence
-            # Message 1: The commenter's exact comment (quoted so they have immediate context)
-            msg1 = data.get("message_1_quote") or f'"{comment_text}"'
-            message_sequence.append(msg1)
-
-            # Message 2: The personalized reaction / 1-question
-            if question:
-                message_sequence.append(question)
-            else:
-                message_sequence.append("Hey! Saw your comment on the reel!")
-
-            # Message 3 (Optional): Short friendly follow-up
-            msg3 = data.get("message_3_optional")
-            if msg3 and isinstance(msg3, str) and msg3.strip():
-                message_sequence.append(msg3.strip())
+            # Use Theory Automata to orchestrate and sort message sequence
+            message_sequence = MessageSequenceAutomata.process_sequence(
+                comment_text=comment_text,
+                data=data,
+                fallback_q=question
+            )
+            # Ensure suggested_question is set from sequence
+            if len(message_sequence) > 1:
+                question = message_sequence[1]
 
         return ProspectAnalysis(
             username=username,

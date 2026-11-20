@@ -52,7 +52,7 @@ for i, m in enumerate(analysisA.message_sequence, 1):
 assert analysisA.decision == DecisionClassification.ELIGIBLE
 assert analysisA.suggested_question is not None
 assert len(analysisA.message_sequence) >= 2
-assert analysisA.message_sequence[0] == '"This workflow is insane! DM me the pricing and setup details please."'
+assert analysisA.message_sequence[0] == "This workflow is insane! DM me the pricing and setup details please."
 print("    >>> PASS ✓\n", flush=True)
 
 # Scenario B: Engaged commenter with Message Button (Hindi / Reel reaction) -> ELIGIBLE

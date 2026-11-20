@@ -36,6 +36,20 @@ async def run_agent():
     console.print("[cyan]The user controls navigation. Please scroll through Instagram Reels.[/cyan]")
     console.print(f"[cyan]When you settle on a Reel for {settings.reel_cooldown_seconds:.0f} seconds, investigation starts automatically.[/cyan]\n")
 
+    # Periodic 1-Minute Live Metrics Dashboard Heartbeat
+    async def periodic_stats_reporter():
+        while True:
+            try:
+                await asyncio.sleep(60)
+                console.print("\n[dim]⏱ [1-Minute Status Heartbeat][/dim]")
+                dashboard.display_session_stats(session_logger.stats)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                pass
+
+    stats_task = asyncio.create_task(periodic_stats_reporter())
+
     try:
         while True:
             # 1. Wait for user to scroll and settle for 15 seconds
@@ -142,8 +156,8 @@ async def run_agent():
                             else:
                                 console.print(f"[bold cyan]✓ Messages drafted in Chrome chat box for @{username} (Review & send in Chrome)[/bold cyan]")
                         
-                        # Wait 2 seconds so the sent message bubble is clearly visible before closing
-                        await asyncio.sleep(2.0)
+                        # Brief pause so the sent message bubble is registered in DOM
+                        await asyncio.sleep(0.7)
                         # Close chat drawer before returning to Reel
                         await profile_inspector.close_chat_dialog()
                     else:
@@ -190,6 +204,9 @@ async def run_agent():
     except Exception as e:
         console.print(f"\n[bold red]Unexpected error in main loop: {e}[/bold red]")
     finally:
+        if 'stats_task' in locals() and not stats_task.done():
+            stats_task.cancel()
+
         console.print("\n[bold green]Final Session Summary:[/bold green]")
         dashboard.display_session_stats(session_logger.stats)
         console.print(f"[cyan]• Session report saved to: session_data/session_report.json[/cyan]")

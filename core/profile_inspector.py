@@ -268,18 +268,17 @@ class ProfileInspector:
                 if not clean_msg:
                     continue
 
-                print(f"[ProfileInspector] Typing Message {idx}/{len(messages)}: \"{clean_msg}\"")
+                print(f"[ProfileInspector] Fast-typing Message {idx}/{len(messages)}: \"{clean_msg}\"")
                 current_input = await self._find_chat_input() or input_el
                 await current_input.click()
-                await asyncio.sleep(0.3)
-                await current_input.type(clean_msg, delay=25)
-                await asyncio.sleep(0.6)
+                await asyncio.sleep(0.1)
+                await current_input.type(clean_msg, delay=4)
+                await asyncio.sleep(0.15)
 
                 if auto_send:
                     await self._dispatch_send_action(input_el=current_input)
                     if idx < len(messages):
-                        print("[ProfileInspector] Natural pause between messages...")
-                        await asyncio.sleep(1.4)
+                        await asyncio.sleep(0.4)
                 else:
                     print(f"[ProfileInspector] Message {idx} drafted in Chrome chat box.")
 
@@ -297,27 +296,24 @@ class ProfileInspector:
 
     async def _dispatch_send_action(self, input_el=None) -> bool:
         """
-        Dispatches the typed message to the recipient.
-        Performs dual dispatch:
+        Dispatches the typed message rapidly to the recipient.
+        Performs immediate dual dispatch:
         1. Emits Enter keypress directly on the input element and keyboard.
-        2. Clicks the visible 'Send' button or executes JS dispatch.
-        Ensures the message is immediately transmitted without getting stuck.
+        2. Rapidly checks and clicks the 'Send' button if still visible.
+        Transmits without unnecessary lag or waiting.
         """
-        print("[ProfileInspector] Dispatching message (Enter keypress + Send button click)...")
-
-        # 1. Press Enter key on input element and keyboard
+        # 1. Immediate Enter keypress on input element and keyboard
         try:
             if input_el:
                 await input_el.focus()
                 await input_el.press("Enter")
             await self.page.keyboard.press("Enter")
-            print("[ProfileInspector] Pressed Enter key on message input.")
         except Exception as e:
             print(f"[ProfileInspector] Enter keypress notice: {e}")
 
-        await asyncio.sleep(0.6)
+        await asyncio.sleep(0.2)
 
-        # 2. Try clicking the explicit 'Send' button beside the input box
+        # 2. Fast check for 'Send' button beside input box
         send_selectors = [
             "div[role='button']:has-text('Send')",
             "button:has-text('Send')",
@@ -329,12 +325,10 @@ class ProfileInspector:
         clicked_send = False
         for sel in send_selectors:
             try:
-                send_btn = await self.page.wait_for_selector(sel, timeout=800, state="visible")
+                send_btn = await self.page.wait_for_selector(sel, timeout=300, state="visible")
                 if send_btn:
                     await send_btn.click()
-                    print(f"[ProfileInspector] Clicked 'Send' button in chat drawer ({sel}).")
                     clicked_send = True
-                    await asyncio.sleep(0.8)
                     break
             except Exception:
                 continue
@@ -356,14 +350,11 @@ class ProfileInspector:
             }
             """
             try:
-                if await self.page.evaluate(js_click_send):
-                    print("[ProfileInspector] Dispatched JS Send button click.")
-                    clicked_send = True
+                await self.page.evaluate(js_click_send)
             except Exception:
                 pass
 
-        # Give network/WebSocket time to deliver message
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(0.3)
         return True
 
     async def close_chat_dialog(self):
