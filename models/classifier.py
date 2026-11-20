@@ -26,7 +26,16 @@ Your job is to inspect an Instagram Reel comment and the commenter's profile to 
    - UNAVAILABLE: Profile or messaging option cannot be accessed.
    - DO_NOT_CONTACT: The person refuses messages or has opted out.
    - UNCERTAIN: Insufficient evidence.
-4. Human Multi-Message Generation (ONLY if ELIGIBLE):
+
+4. STRICT SELF-PROMO & SPAM REJECTION:
+   - NEVER classify commenters who post engagement-bait, self-promotional spam, or ask people to view their story, profile, or bio (e.g. "check my story", "story dekho", "ek bar story chek kro", "mera profile dekho", "check my profile", "link in bio", "check bio", "follow back", "f4f") as ELIGIBLE.
+   - Always mark them as:
+     "comment_intent": "UNRELATED",
+     "dm_permission": "NO_EXPLICIT_PERMISSION",
+     "decision": "NOT_INTERESTED",
+     "reasoning": "Self-promotional spam / story or profile engagement bait."
+
+5. Human Multi-Message Generation (ONLY if ELIGIBLE):
    Write with MAXIMUM creativity, wit, unpredictability, and authentic emotional intelligence.
    Every single message must feel genuinely handwritten by a real person, not an AI template.
    
@@ -50,6 +59,48 @@ Respond strictly in valid JSON matching this schema:
   "message_3_optional": "Contextual casual human closing or null"
 }
 """
+
+SELF_PROMO_SPAM_PATTERNS = [
+    # 1. Story engagement bait (English & Hinglish)
+    (r"\b(check|chek|see|dekho|deko|dekh|dekhiye|kro|krdo)\b.*\b(story|stori)\b", "Story check bait"),
+    (r"\b(story|stori)\b.*\b(check|chek|dekho|deko|dekh|dekhiye|kro|krdo|pe|par|me|mein)\b", "Story check bait"),
+    (r"\bek\s*ba+r\s*(bhi\s*)?(story|stori)\b", "Story check bait"),
+    (r"\b(meri|my)\s*(bhi\s*)?(story|stori)\b", "Story check bait"),
+    (r"\bcheck\s*my\s*highlights?\b", "Highlight check bait"),
+    
+    # 2. Profile / Account / Page bait (English & Hinglish)
+    (r"\b(mera|meri|my)\s*(profile|proflie|pfiodel|profil|ac+ount|id|page)\b", "Profile visit bait"),
+    (r"\b(check|chek|visit|dekho|deko|dekh|dekhiye|kro|krdo)\s*(my|mera|meri)?\s*(profile|proflie|pfiodel|profil|ac+ount|id|page)\b", "Profile visit bait"),
+    (r"\b(profile|proflie|pfiodel|profil|ac+ount|id|page)\s*(check|chek|dekho|deko|dekh|dekhiye|kro|krdo)\b", "Profile visit bait"),
+    (r"\bvisit\s*(my\s*)?(page|profile)\b", "Profile visit bait"),
+    (r"\bcheck\s*my\s*page\b", "Profile visit bait"),
+    
+    # 3. Bio link / bait
+    (r"\b(check|chek|see|dekho|deko|dekh)\s*(my\s*)?bio\b", "Bio check bait"),
+    (r"\blink\s*in\s*bio\b", "Link in bio bait"),
+    (r"\bbio\s*(check|link|mein|pe|par)\b", "Bio check bait"),
+    
+    # 4. Follow-for-follow & spam promotion
+    (r"\bfollow\s*(back|me|karo|krdo|krna)\b", "Follow-for-follow bait"),
+    (r"\bf4f\b", "Follow-for-follow bait"),
+    (r"\bpromote\s*(it\s*)?on\b", "Promo bot spam"),
+    (r"\bsend\s*(pic|photo|video)\s*on\b", "Promo bot spam"),
+    (r"\bdm\s*(it\s*)?on\b", "Promo bot spam")
+]
+
+def is_self_promo_or_spam(comment_text: str) -> Tuple[bool, Optional[str]]:
+    """
+    Detects whether a comment is self-promotional spam or engagement bait
+    (e.g., 'Ek bar story chek kro', 'check my story', 'mera profile dekho', 'check bio').
+    Returns (True, reason) if spam, otherwise (False, None).
+    """
+    if not comment_text:
+        return False, None
+    text = comment_text.lower().strip()
+    for pattern, reason in SELF_PROMO_SPAM_PATTERNS:
+        if re.search(pattern, text):
+            return True, reason
+    return False, None
 
 class MessageSequenceAutomata:
     """
@@ -267,6 +318,19 @@ Bio: {bio_text or "N/A"}
         is_private: bool
     ) -> dict:
         text = comment_text.lower().strip()
+
+        # Check self-promotional spam and engagement-bait first (e.g. "Ek bar story chek kro", "mera profile dekho")
+        is_spam, spam_reason = is_self_promo_or_spam(comment_text)
+        if is_spam:
+            return {
+                "comment_intent": CommentIntent.UNRELATED.value,
+                "dm_permission": DMPermission.NO_EXPLICIT_PERMISSION.value,
+                "decision": DecisionClassification.NOT_INTERESTED.value,
+                "reasoning": f"Ignored: Self-promotional engagement bait ({spam_reason}).",
+                "suggested_question": None,
+                "message_1_quote": None,
+                "message_3_optional": None
+            }
 
         # Check explicit refusals first
         refusal_patterns = [r"don't dm", r"dont dm", r"no dms", r"stop messaging", r"spam", r"leave me alone"]

@@ -116,6 +116,34 @@ assert sm.is_user_processed("anti_spam")
 assert not sm.is_user_processed("uncontacted_lead")
 print("    >>> PASS ✓\n", flush=True)
 
+# Scenario F: Self-Promotional Spam & Story/Profile Bait Filter
+from models.classifier import is_self_promo_or_spam
+
+print("  [Scenario F: Self-Promotional Spam & Story/Profile Bait Filter]")
+spam_samples = [
+    "Ek bar story chek kro❤️",
+    "mera profile dekho",
+    "check my story please",
+    "meri profile check karo na",
+    "link in bio check it out",
+    "follow back please f4f",
+    "Promote it on @some_page"
+]
+for sample in spam_samples:
+    is_spam, reason = is_self_promo_or_spam(sample)
+    print(f"    '{sample}' -> Detected Spam: {is_spam} ({reason})")
+    assert is_spam, f"Sample '{sample}' should have been detected as spam!"
+
+# Verify rule-based fallback also classifies it as NOT_INTERESTED
+resF = classifier._rule_based_fallback(
+    comment_text="Ek bar story chek kro❤️",
+    reel_caption="Demo reel",
+    message_availability=MessageAvailability.MESSAGE_BUTTON_VISIBLE,
+    is_private=False
+)
+assert resF["decision"] == DecisionClassification.NOT_INTERESTED.value
+print("    >>> PASS ✓ (All self-promo bait correctly ignored!)\n", flush=True)
+
 # Session Stats & Message Logging Verification
 print("  [Session Stats & Dedicated Message Log Verification]")
 sl.record_message_sent(

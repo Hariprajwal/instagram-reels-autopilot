@@ -11,6 +11,7 @@ from core.profile_inspector import ProfileInspector
 from core.decision_engine import DecisionEngine
 from storage.session_logger import SessionLogger
 from storage.state_manager import StateManager
+from models.classifier import is_self_promo_or_spam
 from ui.dashboard import dashboard, console
 
 async def run_agent():
@@ -86,6 +87,18 @@ async def run_agent():
 
                 if state_manager.is_user_processed(username):
                     console.print(f"[dim]Skipping @{username} (already inspected in session).[/dim]")
+                    continue
+
+                # Fast Spam / Self-Promo Filter: Ignore story/profile checks without visiting profile
+                is_spam, spam_reason = is_self_promo_or_spam(comment.text)
+                if is_spam:
+                    console.print(f"\n[dim yellow]⊘ Skipping @{username}: Self-promo / spam detected ({spam_reason}): \"{comment.text}\"[/dim yellow]")
+                    state_manager.mark_user_processed(
+                        username=username,
+                        reel_id=reel_context.reel_id,
+                        decision="NOT_INTERESTED",
+                        notes=f"Ignored: Self-promo / spam ({spam_reason})"
+                    )
                     continue
 
                 session_logger.record_comment_read()
