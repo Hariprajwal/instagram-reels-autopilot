@@ -21,11 +21,12 @@ for d in [SESSION_DATA_DIR, SCREENSHOTS_DIR, REEL_SCREENSHOTS_DIR, PROFILE_SCREE
 # Load .env file
 load_dotenv(BASE_DIR / ".env")
 
-def _load_ig_credentials():
-    u = os.getenv("INSTAGRAM_USERNAME", "").strip()
-    p = os.getenv("INSTAGRAM_PASSWORD", "").strip()
-    if u and p:
-        return u, p
+def _load_credentials():
+    ig_user = os.getenv("INSTAGRAM_USERNAME", "").strip()
+    ig_pass = os.getenv("INSTAGRAM_PASSWORD", "").strip()
+    g_email = os.getenv("GOOGLE_EMAIL", "").strip() or os.getenv("GMAIL", "").strip()
+    g_pass = os.getenv("GOOGLE_PASSWORD", "").strip()
+
     env_file = BASE_DIR / ".env"
     if env_file.exists():
         with open(env_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -34,22 +35,34 @@ def _load_ig_credentials():
                 if not line or line.startswith("#"):
                     continue
                 lower = line.lower()
-                if any(lower.startswith(k) for k in ["instagram_username", "username"]):
-                    parts = re.split(r"[:=]", line, maxsplit=1)
-                    if len(parts) == 2 and not u:
-                        u = parts[1].strip()
-                elif any(lower.startswith(k) for k in ["instagram_password", "password"]):
-                    parts = re.split(r"[:=]", line, maxsplit=1)
-                    if len(parts) == 2 and not p:
-                        p = parts[1].strip()
-    return u, p
+                parts = re.split(r"[:=]", line, maxsplit=1)
+                if len(parts) == 2:
+                    k = parts[0].strip().lower()
+                    v = parts[1].strip()
+                    if ("instagram_username" in k or k == "username") and not ig_user:
+                        ig_user = v
+                    elif ("instagram_password" in k or k == "instagram_pass") and not ig_pass:
+                        ig_pass = v
+                    elif ("google_email" in k or "gmail" in k or k == "email") and not g_email:
+                        g_email = v
+                    elif ("google_password" in k or "google_pass" in k) and not g_pass:
+                        g_pass = v
+                    elif k == "password" and not ig_pass:
+                        ig_pass = v
 
-_ig_user, _ig_pass = _load_ig_credentials()
+    return ig_user, ig_pass, g_email, g_pass
+
+_ig_user, _ig_pass, _g_email, _g_pass = _load_credentials()
 
 class AgentSettings(BaseModel):
     # Instagram Credentials for auto-login
     instagram_username: str = Field(default=_ig_user)
     instagram_password: str = Field(default=_ig_pass)
+
+    # Google / Chrome Profile Credentials
+    google_email: str = Field(default=_g_email)
+    google_password: str = Field(default=_g_pass)
+    chrome_profile_directory: str = Field(default=os.getenv("CHROME_PROFILE_DIRECTORY", "Default"))
 
     # Chrome CDP settings
     chrome_cdp_url: str = Field(default=os.getenv("CHROME_CDP_URL", "http://127.0.0.1:9222"))

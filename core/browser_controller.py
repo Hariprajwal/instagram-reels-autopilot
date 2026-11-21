@@ -69,14 +69,16 @@ class BrowserController:
             )
 
         profile_dir = str(getattr(settings, "chrome_user_data_dir", os.path.join("session_data", "chrome_profile")))
+        profile_name = str(getattr(settings, "chrome_profile_directory", "Default"))
         os.makedirs(profile_dir, exist_ok=True)
 
         print("\n[BrowserController] Chrome is not active on port 9222.")
-        print(f"[BrowserController] Launching dedicated Chrome on port 9222 (profile: {profile_dir})...")
+        print(f"[BrowserController] Launching dedicated Chrome on port 9222 (profile: {profile_dir}, directory: {profile_name})...")
         cmd = [
             chrome_bin,
             "--remote-debugging-port=9222",
             f"--user-data-dir={profile_dir}",
+            f"--profile-directory={profile_name}",
             "--remote-allow-origins=*",
             "--disable-blink-features=AutomationControlled",
             "https://www.instagram.com/reels/"
@@ -123,7 +125,16 @@ class BrowserController:
                 raise RuntimeError("No browser context found in running Chrome instance.")
 
             self.context = contexts[0]
+
+            # Step 3: Handle Google account sign-in & dismiss Chrome sync prompt if presented
+            await self._handle_google_signin_if_needed()
+            await self._handle_chrome_sync_prompt()
+
+            # Step 4: Locate or navigate to Instagram tab
             self.page = await self._find_or_wait_for_instagram_tab()
+
+            # Step 5: Check sync prompt again and perform Instagram auto-login if needed
+            await self._handle_chrome_sync_prompt()
             await self._handle_auto_login_if_needed(self.page)
             print(f"[BrowserController] Successfully attached to Instagram tab: {self.page.url}")
             return self.page
@@ -134,6 +145,170 @@ class BrowserController:
                 except Exception:
                     pass
             raise e
+
+    async def _handle_chrome_sync_prompt(self) -> bool:
+        """
+        Detects the Chrome sync modal dialog:
+        'To quickly get back to sites you've visited, sync your history and tabs'
+        and automatically clicks 'No thanks' as requested.
+        """
+        if not self.context:
+            return False
+
+        handled = False
+        for p in self.context.pages:
+            try:
+                # 1. Direct Playwright selector search across all visible buttons
+                no_thanks_selectors = [
+                    "button:has-text('No thanks')",
+                    "button:has-text('No Thanks')",
+                    "div[role='button']:has-text('No thanks')",
+                    "div[role='button']:has-text('No Thanks')",
+                    "cr-button#notNowButton",
+                    "cr-button:has-text('No thanks')",
+                    "cr-button:has-text('No Thanks')",
+                    "button#cancelButton",
+                    "[aria-label*='No thanks']",
+                    "[aria-label*='No Thanks']"
+                ]
+                for sel in no_thanks_selectors:
+                    try:
+                        btn = await p.wait_for_selector(sel, timeout=300, state="visible")
+                        if btn:
+                            await btn.click()
+                            print("[BrowserController] ✓ Detected Chrome Sync prompt. Clicked 'No thanks' as requested.")
+                            handled = True
+                            await asyncio.sleep(0.5)
+                            break
+                    except Exception:
+                        continue
+
+                # 2. Deep DOM and Shadow DOM traversal for Chrome WebUI sync dialogs
+                try:
+                    clicked = await p.evaluate('''() => {
+                        const findAndClickNoThanks = (root) => {
+                            if (!root) return false;
+                            const elements = root.querySelectorAll('button, div[role="button"], cr-button, [role="button"]');
+                            for (const el of elements) {
+                                const text = (el.textContent || el.innerText || '').trim().toLowerCase();
+                                if (text === 'no thanks' || text === 'not now') {
+                                    el.click();
+                                    return true;
+                                }
+                            }
+                            const allNodes = root.querySelectorAll('*');
+                            for (const node of allNodes) {
+                                if (node.shadowRoot) {
+                                    const found = findAndClickNoThanks(node.shadowRoot);
+                                    if (found) return true;
+                                }
+                            }
+                            return false;
+                        };
+                        return findAndClickNoThanks(document);
+                    }''')
+                    if clicked:
+                        print("[BrowserController] ✓ Dismissed Chrome Sync prompt ('No thanks' clicked via Shadow DOM).")
+                        handled = True
+                        await asyncio.sleep(0.5)
+                except Exception:
+                    pass
+
+            except Exception:
+                continue
+
+        return handled
+
+    async def _handle_google_signin_if_needed(self) -> bool:
+        """
+        Detects if a tab is open to Google Sign-in / 'Sign in to Chrome'.
+        If google_email and google_password are provided, automatically fills them in,
+        advances through the sign-in flow, and dismisses any sync prompts with 'No thanks'.
+        """
+        if not self.context:
+            return False
+
+        email = settings.google_email
+        password = settings.google_password
+        if not email:
+            return False
+
+        for p in self.context.pages:
+            try:
+                url = p.url.lower()
+                is_google_signin = ("accounts.google.com" in url) or ("signin-dice-web" in url) or ("chrome://signin" in url)
+                if not is_google_signin:
+                    continue
+
+                print(f"\n[BrowserController] Google / Chrome sign-in page detected ({p.url}).")
+                print(f"[BrowserController] Automatically authenticating with Google account: {email}...")
+
+                # 1. Fill email if input is visible
+                email_input = await p.wait_for_selector(
+                    "input[type='email'], input[name='identifier'], input#identifierId, input[aria-label*='Email']",
+                    timeout=2000,
+                    state="visible"
+                )
+                if email_input:
+                    current_val = await email_input.input_value()
+                    if current_val != email:
+                        await email_input.click()
+                        await email_input.fill("")
+                        await email_input.type(email, delay=30)
+                        await asyncio.sleep(0.3)
+
+                    # Click Next
+                    next_btn = await p.wait_for_selector(
+                        "#identifierNext, button:has-text('Next'), div[role='button']:has-text('Next')",
+                        timeout=2000,
+                        state="visible"
+                    )
+                    if next_btn:
+                        await next_btn.click()
+                    else:
+                        await p.keyboard.press("Enter")
+
+                    print("[BrowserController] Submitted Google email. Waiting for password prompt...")
+                    await asyncio.sleep(2.0)
+
+                # 2. Fill password if visible
+                if password:
+                    try:
+                        pass_input = await p.wait_for_selector(
+                            "input[type='password'], input[name='Passwd'], input[name='password']",
+                            timeout=4000,
+                            state="visible"
+                        )
+                        if pass_input:
+                            await pass_input.click()
+                            await pass_input.fill("")
+                            await pass_input.type(password, delay=30)
+                            await asyncio.sleep(0.3)
+
+                            next_pass = await p.wait_for_selector(
+                                "#passwordNext, button:has-text('Next'), div[role='button']:has-text('Next')",
+                                timeout=2000,
+                                state="visible"
+                            )
+                            if next_pass:
+                                await next_pass.click()
+                            else:
+                                await p.keyboard.press("Enter")
+
+                            print("[BrowserController] Submitted Google password. Waiting for completion...")
+                            await asyncio.sleep(2.5)
+                    except Exception:
+                        pass
+
+                # 3. Check for sync prompt right after sign-in
+                await self._handle_chrome_sync_prompt()
+                return True
+
+            except Exception as e:
+                print(f"[BrowserController] Google sign-in notice: {e}")
+                continue
+
+        return False
 
     async def _handle_auto_login_if_needed(self, page: Page) -> bool:
         """
@@ -183,29 +358,33 @@ class BrowserController:
         print(f"\n[BrowserController] Instagram login screen detected. Automatically logging in as @{username}...")
 
         try:
-            # 1. Fill username
+            # 1. Fill username (skip retyping if already autofilled by Chrome)
             user_el = await page.wait_for_selector(
                 "input[name='username'], input[aria-label*='username'], input[aria-label*='Mobile number']",
                 timeout=3000,
                 state="visible"
             )
             if user_el:
-                await user_el.click()
-                await user_el.fill("")
-                await user_el.type(username, delay=35)
-                await asyncio.sleep(0.3)
+                cur_user = await user_el.input_value()
+                if not cur_user:
+                    await user_el.click()
+                    await user_el.fill("")
+                    await user_el.type(username, delay=35)
+                    await asyncio.sleep(0.3)
 
-            # 2. Fill password
+            # 2. Fill password (skip retyping if already autofilled by Chrome)
             pass_el = await page.wait_for_selector(
                 "input[name='password'], input[type='password']",
                 timeout=3000,
                 state="visible"
             )
             if pass_el:
-                await pass_el.click()
-                await pass_el.fill("")
-                await pass_el.type(password, delay=35)
-                await asyncio.sleep(0.5)
+                cur_pass = await pass_el.input_value()
+                if not cur_pass:
+                    await pass_el.click()
+                    await pass_el.fill("")
+                    await pass_el.type(password, delay=35)
+                    await asyncio.sleep(0.5)
 
             # 3. Click Log In button
             login_btn = await page.wait_for_selector(
@@ -292,11 +471,12 @@ class BrowserController:
                 await p.bring_to_front()
                 return p
 
-        # If not found, use first page and wait or navigate
+        # If not found, use first page (preferring non-Google signin pages) and navigate
         if pages:
-            page = pages[0]
+            non_google_pages = [p for p in pages if "accounts.google.com" not in p.url and "signin" not in p.url.lower()]
+            page = non_google_pages[0] if non_google_pages else pages[0]
             if "instagram.com" not in page.url:
-                print("[BrowserController] No active Instagram tab found. Navigating existing tab to Instagram Reels...")
+                print("[BrowserController] No active Instagram tab found. Navigating tab to Instagram Reels...")
                 await page.goto("https://www.instagram.com/reels/", wait_until="domcontentloaded")
             await page.bring_to_front()
             return page
