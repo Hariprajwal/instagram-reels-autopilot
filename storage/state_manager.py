@@ -4,6 +4,9 @@ from typing import Set, Dict
 from config.settings import SESSION_DATA_DIR
 
 class StateManager:
+    # Keep at most this many processed users in persistent cache to avoid bloat
+    MAX_CACHED_USERS = 500
+
     def __init__(self, cache_file: Path = SESSION_DATA_DIR / "processed_cache.json"):
         self.cache_file = cache_file
         self.processed_users: Set[str] = set()
@@ -23,6 +26,18 @@ class StateManager:
                 print(f"[StateManager] Warning: Could not load cache: {e}")
 
     def save(self):
+        # Auto-trim: if too many users are cached, drop the oldest entries from history
+        if len(self.processed_users) > self.MAX_CACHED_USERS:
+            # Keep the most recently added users by trimming user_history first
+            overflow = len(self.processed_users) - self.MAX_CACHED_USERS
+            if self.user_history:
+                # Remove oldest entries from history dict
+                old_keys = list(self.user_history.keys())[:overflow]
+                for k in old_keys:
+                    self.user_history.pop(k, None)
+                    self.processed_users.discard(k)
+            print(f"[StateManager] Auto-trimmed {overflow} old entries from cache (limit: {self.MAX_CACHED_USERS}).")
+
         try:
             with open(self.cache_file, "w", encoding="utf-8") as f:
                 json.dump({

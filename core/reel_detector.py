@@ -119,25 +119,46 @@ class ReelDetector:
         Continuously monitors user manual scrolling or automatic navigation.
         Only returns when settled on an uninspected Reel for cooldown seconds.
         If the current Reel was already processed, automatically advances past it.
+
+        FIXED: We track how many consecutive skip-advances we've done so we don't
+        loop back to reel-1 when ALL known reels have been processed. After 5 skips
+        without finding a fresh reel we just wait for the user to manually scroll
+        to a new one (instead of wrapping around forever).
         """
         cooldown = settings.reel_cooldown_seconds
         print(f"\n[ReelDetector] Waiting for user to scroll and settle on a Reel for {cooldown:.0f} seconds...")
 
         last_seen_id = None
         settle_start_time = None
+        consecutive_skips = 0
+        MAX_CONSECUTIVE_SKIPS = 5  # Safety: stop auto-advancing after this many misses
 
         while True:
             info = await self.get_active_reel_info()
             detected_id = info["reel_id"]
 
-            # If this reel was already processed in this session, immediately skip past it
-            if state_manager and detected_id and not detected_id.startswith("unknown") and state_manager.is_reel_processed(detected_id):
-                print(f"[ReelDetector] Reel [{detected_id}] has already been investigated. Auto-advancing past it...")
-                await self.navigate_to_next_reel()
-                await asyncio.sleep(1.2)
-                last_seen_id = None
-                settle_start_time = None
+            # If this reel was already processed in this session, skip it once — but
+            # don't loop endlessly if all visible reels were already done.
+            if (state_manager and detected_id
+                    and not detected_id.startswith("unknown")
+                    and state_manager.is_reel_processed(detected_id)):
+                consecutive_skips += 1
+                if consecutive_skips <= MAX_CONSECUTIVE_SKIPS:
+                    print(f"[ReelDetector] Reel [{detected_id}] already investigated (skip {consecutive_skips}/{MAX_CONSECUTIVE_SKIPS}). Advancing...")
+                    await self.navigate_to_next_reel()
+                    await asyncio.sleep(1.5)
+                    last_seen_id = None
+                    settle_start_time = None
+                else:
+                    # Too many consecutive skips — stop auto-advancing and just wait for user to scroll
+                    if consecutive_skips == MAX_CONSECUTIVE_SKIPS + 1:
+                        print(f"[ReelDetector] ⚠ Reached {MAX_CONSECUTIVE_SKIPS} consecutive skips of already-processed reels.")
+                        print(f"[ReelDetector] Pausing auto-advance. Waiting for you to scroll to a fresh Reel...")
+                    await asyncio.sleep(1.5)
                 continue
+
+            # Fresh / unprocessed reel — reset skip counter
+            consecutive_skips = 0
 
             if detected_id != last_seen_id:
                 # Reel changed or user scrolled!
@@ -158,17 +179,7 @@ class ReelDetector:
                     print(f"[ReelDetector] Reel [{detected_id}] has settled ({cooldown:.0f}s reached)! Confirming fully loaded...")
                     await asyncio.sleep(1.0)  # Brief buffer for DOM stability
 
-                    # Capture fresh screenshot
-                    screenshot_name = f"reel_{detected_id}_{int(time.time())}.png"
-                    screenshot_path = REEL_SCREENSHOTS_DIR / screenshot_name
-                    try:
-                        await self.page.screenshot(path=str(screenshot_path))
-                        print(f"[ReelDetector] Captured fresh Reel screenshot: {screenshot_path.name}")
-                    except Exception as e:
-                        print(f"[ReelDetector] Screenshot warning: {e}")
-                        screenshot_path = None
-
-                    # Fresh info grab
+                    # Fresh info grab — no screenshot here (screenshots happen on reel settle only)
                     final_info = await self.get_active_reel_info()
                     self.current_reel_id = final_info["reel_id"]
                     return ReelContext(
@@ -177,7 +188,7 @@ class ReelDetector:
                         author=final_info["author"],
                         caption=final_info["caption"],
                         timestamp=datetime.now(),
-                        screenshot_path=str(screenshot_path) if screenshot_path else None
+                        screenshot_path=None  # No per-reel screenshots to save disk
                     )
 
             await asyncio.sleep(0.8)

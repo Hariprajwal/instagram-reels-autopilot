@@ -56,14 +56,17 @@ class ProfileInspector:
                 message_availability=MessageAvailability.PROFILE_INACCESSIBLE
             )
 
-        # Capture screenshot
-        screenshot_path = PROFILE_SCREENSHOTS_DIR / f"{clean_user}_{int(time.time())}.png"
-        try:
-            await self.page.screenshot(path=str(screenshot_path))
-            print(f"[ProfileInspector] Captured profile screenshot: {screenshot_path.name}")
-        except Exception as e:
-            print(f"[ProfileInspector] Screenshot error: {e}")
-            screenshot_path = None
+        # Skip per-profile screenshot by default to save disk I/O — screenshots accumulate fast.
+        # Only capture if SAVE_PROFILE_SCREENSHOTS=true in .env
+        screenshot_path = None
+        if getattr(settings, "save_profile_screenshots", False):
+            screenshot_path = PROFILE_SCREENSHOTS_DIR / f"{clean_user}_{int(time.time())}.png"
+            try:
+                await self.page.screenshot(path=str(screenshot_path))
+                print(f"[ProfileInspector] Captured profile screenshot: {screenshot_path.name}")
+            except Exception as e:
+                print(f"[ProfileInspector] Screenshot error: {e}")
+                screenshot_path = None
 
         # Execute comprehensive DOM evaluation
         js_profile_inspect = """
@@ -185,8 +188,13 @@ class ProfileInspector:
         """
         Clicks the 'Message' button on the profile header to open the floating
         Direct Message chat drawer shown in the bottom-right corner.
+        Waits for the profile to fully load before attempting to find the button.
         """
         print("[ProfileInspector] Clicking 'Message' button to open chat drawer...")
+
+        # Ensure the profile page is settled and Message button is in DOM
+        await asyncio.sleep(0.5)
+
         message_selectors = self.selectors.get("message_button", [
             "div[role='button']:has-text('Message')",
             "button:has-text('Message')",
@@ -197,12 +205,12 @@ class ProfileInspector:
 
         for sel in message_selectors:
             try:
-                btn = await self.page.wait_for_selector(sel, timeout=1800, state="visible")
+                btn = await self.page.wait_for_selector(sel, timeout=3000, state="visible")
                 if btn:
                     await btn.scroll_into_view_if_needed()
                     await asyncio.sleep(0.3)
                     await btn.click()
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(2.5)  # Give drawer time to fully open
                     if await self._find_chat_input():
                         print("[ProfileInspector] Chat drawer opened successfully.")
                         return True
@@ -228,11 +236,15 @@ class ProfileInspector:
         try:
             clicked = await self.page.evaluate(js_click_msg)
             if clicked:
-                await asyncio.sleep(2.0)
-                return (await self._find_chat_input()) is not None
+                await asyncio.sleep(2.5)
+                found = await self._find_chat_input()
+                if found:
+                    print("[ProfileInspector] Chat drawer opened via JS fallback.")
+                    return True
         except Exception:
             pass
 
+        print("[ProfileInspector] ⚠ Could not open message dialog — Message button not found on profile.")
         return False
 
     async def _find_chat_input(self):
@@ -258,6 +270,7 @@ class ProfileInspector:
         1. Message 1: The commenter's original comment (quoted for context).
         2. Message 2: Personalized reaction / question.
         3. Message 3 (Optional): Short friendly follow-up.
+        Re-finds the input before each message to handle DOM refreshes after sending.
         """
         if not messages:
             return False
@@ -273,17 +286,24 @@ class ProfileInspector:
                 if not clean_msg:
                     continue
 
-                print(f"[ProfileInspector] Fast-typing Message {idx}/{len(messages)}: \"{clean_msg}\"")
-                current_input = await self._find_chat_input() or input_el
+                print(f"[ProfileInspector] Typing Message {idx}/{len(messages)}: \"{clean_msg}\"")
+
+                # Always re-find input — after a send the DOM refreshes the textbox
+                current_input = await self._find_chat_input()
+                if not current_input:
+                    print(f"[ProfileInspector] ⚠ Lost chat input before message {idx}. Stopping sequence.")
+                    return idx > 1  # Partial success if at least one message sent
+
                 await current_input.click()
-                await asyncio.sleep(0.1)
-                await current_input.type(clean_msg, delay=4)
-                await asyncio.sleep(0.15)
+                await asyncio.sleep(0.2)
+                await current_input.fill("")  # Clear any stale text
+                await current_input.type(clean_msg, delay=5)
+                await asyncio.sleep(0.2)
 
                 if auto_send:
                     await self._dispatch_send_action(input_el=current_input)
-                    if idx < len(messages):
-                        await asyncio.sleep(0.4)
+                    # Wait for Instagram to register the sent message and re-render input
+                    await asyncio.sleep(0.8 if idx < len(messages) else 0.3)
                 else:
                     print(f"[ProfileInspector] Message {idx} drafted in Chrome chat box.")
 

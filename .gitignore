@@ -4,5 +4,6 @@ __pycache__/
 session_data/screenshots/*
 session_data/*.json
 session_data/*.csv
+session_data/chrome_profile/
 .vscode/
 node_modules/

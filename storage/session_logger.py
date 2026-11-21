@@ -1,12 +1,18 @@
 import json
 import csv
+import shutil
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from config.settings import SESSION_DATA_DIR
 from models.schemas import SessionStats, ProspectAnalysis, DecisionClassification
 
 class SessionLogger:
+    # Keep at most this many rows in the CSV files before rolling over
+    MAX_CSV_ROWS = 2000
+    # Delete old session reports older than this many days
+    REPORT_MAX_AGE_DAYS = 7
+
     def __init__(self, session_dir: Path = SESSION_DATA_DIR):
         self.session_dir = session_dir
         self.stats = SessionStats()
@@ -16,6 +22,7 @@ class SessionLogger:
         self.messages_file = self.session_dir / "messages_sent.csv"
         self.queue_file = self.session_dir / "queue.json"
         self._init_csv()
+        self._auto_trim_csvs()
         self.load_queue()
 
     def _init_csv(self):
@@ -36,6 +43,24 @@ class SessionLogger:
                     "Original Comment", "Message 1 (Quote)", "Message 2 (Reaction/Question)",
                     "Message 3 (Followup)", "Status"
                 ])
+
+    def _auto_trim_csvs(self):
+        """Trims CSV files to MAX_CSV_ROWS to prevent unbounded disk growth."""
+        for csv_path in [self.csv_file, self.messages_file]:
+            if not csv_path.exists():
+                continue
+            try:
+                with open(csv_path, "r", newline="", encoding="utf-8") as f:
+                    rows = list(csv.reader(f))
+                if len(rows) > self.MAX_CSV_ROWS + 1:  # +1 for header
+                    # Keep header + last MAX_CSV_ROWS rows
+                    trimmed = [rows[0]] + rows[-(self.MAX_CSV_ROWS):]
+                    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                        writer = csv.writer(f)
+                        writer.writerows(trimmed)
+                    print(f"[SessionLogger] Auto-trimmed {csv_path.name} to last {self.MAX_CSV_ROWS} rows.")
+            except Exception as e:
+                print(f"[SessionLogger] Warning: Could not trim {csv_path.name}: {e}")
 
     def record_reel_inspected(self):
         self.stats.reels_inspected += 1
@@ -134,7 +159,7 @@ class SessionLogger:
         print(f"[SessionLogger] Logged message sequence to: {self.messages_file.name}")
 
     def cleanup_screenshots(self):
-        """Cleans up temporary screenshot image files on session completion to save disk space."""
+        """Cleans up ALL screenshot image files on session completion to save disk space."""
         cleaned_count = 0
         for sub in ["reels", "profiles"]:
             sub_dir = self.session_dir / "screenshots" / sub
@@ -147,6 +172,23 @@ class SessionLogger:
                         pass
         if cleaned_count > 0:
             print(f"[SessionLogger] Cleaned up {cleaned_count} temporary screenshots to free disk space.")
+
+    def cleanup_old_screenshots(self, max_age_minutes: int = 30):
+        """Mid-session cleanup: deletes screenshots older than max_age_minutes to prevent build-up."""
+        cutoff = datetime.now().timestamp() - max_age_minutes * 60
+        cleaned_count = 0
+        for sub in ["reels", "profiles"]:
+            sub_dir = self.session_dir / "screenshots" / sub
+            if sub_dir.exists():
+                for p in sub_dir.glob("*.png"):
+                    try:
+                        if p.stat().st_mtime < cutoff:
+                            p.unlink()
+                            cleaned_count += 1
+                    except Exception:
+                        pass
+        if cleaned_count > 0:
+            print(f"[SessionLogger] Mid-session cleaned {cleaned_count} old screenshots.")
 
     def save_report(self):
         try:

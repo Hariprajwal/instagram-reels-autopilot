@@ -51,6 +51,7 @@ class AgentSettings(BaseModel):
     # Navigation Controls
     auto_next_reel: bool = Field(default=os.getenv("AUTO_NEXT_REEL", "true").lower() == "true")
     cleanup_screenshots_on_exit: bool = Field(default=os.getenv("CLEANUP_SCREENSHOTS_ON_EXIT", "true").lower() == "true")
+    save_profile_screenshots: bool = Field(default=os.getenv("SAVE_PROFILE_SCREENSHOTS", "false").lower() == "true")
 
     # Safety limits
     human_in_the_loop: bool = Field(default=os.getenv("HUMAN_IN_THE_LOOP", "true").lower() == "true")

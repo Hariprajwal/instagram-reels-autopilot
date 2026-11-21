@@ -37,13 +37,19 @@ async def run_agent():
     console.print("[cyan]The user controls navigation. Please scroll through Instagram Reels.[/cyan]")
     console.print(f"[cyan]When you settle on a Reel for {settings.reel_cooldown_seconds:.0f} seconds, investigation starts automatically.[/cyan]\n")
 
-    # Periodic 1-Minute Live Metrics Dashboard Heartbeat
+    # Periodic 1-Minute Live Metrics Dashboard Heartbeat + Mid-Session Cleanup
     async def periodic_stats_reporter():
+        cycle = 0
         while True:
             try:
                 await asyncio.sleep(60)
+                cycle += 1
                 console.print("\n[dim]⏱ [1-Minute Status Heartbeat][/dim]")
                 dashboard.display_session_stats(session_logger.stats)
+                # Every 5 minutes: clean up old screenshots and trim CSV files
+                if cycle % 5 == 0:
+                    session_logger.cleanup_old_screenshots(max_age_minutes=15)
+                    session_logger._auto_trim_csvs()
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -114,7 +120,8 @@ async def run_agent():
                     console.print(f"[red]Could not click profile link for @{username}. Marking unavailable.[/red]")
                     profile_data = await profile_inspector.inspect(username)
                 else:
-                    await asyncio.sleep(settings.min_action_delay)
+                    # Wait for profile page to fully settle before inspecting or messaging
+                    await asyncio.sleep(max(settings.min_action_delay, 3.0))
                     # Check if checkpoint appeared on profile load
                     await browser_controller.wait_for_user_to_resolve_checkpoint()
                     profile_data = await profile_inspector.inspect(username)
