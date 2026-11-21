@@ -22,20 +22,34 @@ load_dotenv(BASE_DIR / ".env")
 class AgentSettings(BaseModel):
     # Chrome CDP settings
     chrome_cdp_url: str = Field(default=os.getenv("CHROME_CDP_URL", "http://127.0.0.1:9222"))
+    # Chrome profile dir used when auto-launching with --remote-debugging-port=9222
+    chrome_user_data_dir: Path = Field(default=SESSION_DATA_DIR / "chrome_profile")
+    chrome_profile_directory: str = Field(default=os.getenv("CHROME_PROFILE_DIRECTORY", "Default"))
+
     reel_cooldown_seconds: float = Field(default=float(os.getenv("REEL_COOLDOWN_SECONDS", "3.5")))
     navigation_mode: str = Field(default=os.getenv("NAVIGATION_MODE", "in_tab"))  # in_tab or new_tab
     eligibility_mode: str = Field(default=os.getenv("ELIGIBILITY_MODE", "engaged"))  # engaged or strict
+
+    # Instagram credentials (for auto-login if login screen appears)
+    instagram_username: str = Field(default=os.getenv("INSTAGRAM_USERNAME", ""))
+    instagram_password: str = Field(default=os.getenv("INSTAGRAM_PASSWORD", ""))
+
+    # Google account (for Chrome sign-in if needed)
+    google_email: str = Field(default=os.getenv("GOOGLE_EMAIL", ""))
+    google_password: str = Field(default=os.getenv("GOOGLE_PASSWORD", ""))
 
     # Primary LLM: Groq API
     groq_api_key: str = Field(default=os.getenv("GROQ_API_KEY", ""))
     groq_model: str = Field(default=os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"))
     groq_fallback_models: list = Field(default=[
         "qwen/qwen3.8-27b",
-        "openai/gpt-oss-120b",
         "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
         "allam-2-7b",
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant"
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "meta-llama/llama-4-maverick-17b-128e-instruct",
+        "llama-3.1-8b-instant",
+        "gemma2-9b-it",
     ])
 
     # Alternative LLM: OpenRouter API
