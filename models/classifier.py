@@ -273,13 +273,17 @@ Bio: {bio_text or "N/A"}
         it automatically tries the next active model in sequence.
         """
         models_to_try = [settings.groq_model]
+        # Up-to-date fallback rotation — decommissioned models removed
+        # Order: fastest/cheapest → larger → safest fallback
         fallback_models = getattr(settings, "groq_fallback_models", [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "allam-2-7b",
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant"
+            "qwen/qwen3.8-27b",          # 131K ctx, JSON mode, fast
+            "openai/gpt-oss-20b",         # OpenAI open-weight on Groq
+            "openai/gpt-oss-120b",        # Larger OSS model
+            "allam-2-7b",                 # Arabic/multilingual capable
+            "meta-llama/llama-4-scout-17b-16e-instruct",   # Llama 4 Scout
+            "meta-llama/llama-4-maverick-17b-128e-instruct", # Llama 4 Maverick
+            "llama-3.1-8b-instant",       # Fast 8B — broad availability
+            "gemma2-9b-it",               # Google Gemma 2 — widely available
         ])
         for m in fallback_models:
             if m not in models_to_try:
