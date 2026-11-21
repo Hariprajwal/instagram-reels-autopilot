@@ -409,30 +409,40 @@ class ProfileInspector:
     async def return_to_reel_and_reopen_comments(self, reel_url: str, comment_reader: CommentReader):
         """
         Safely navigates back to the exact Reel being investigated and reopens comments.
-        Directly targets the canonical Reel URL without relying on browser history (go_back),
-        preventing accidental jumps to previous Reels.
+
+        STRATEGY:
+        - First try: go directly to the specific reel canonical URL and open comments there.
+          This keeps us on the exact reel without worrying about feed position.
+        - After ALL comments are done (called from main loop), the next navigate_to_next_reel()
+          will redirect to /reels/ feed before advancing, so this is safe.
         """
         match = re.search(r'/(?:reel|reels)/([A-Za-z0-9_-]+)', reel_url)
         reel_id = match.group(1) if match else None
-        canonical_reel = f"https://www.instagram.com/reel/{reel_id}/" if (reel_id and not reel_id.startswith("vid_") and not reel_id.startswith("unknown")) else reel_url
+        canonical_reel = (
+            f"https://www.instagram.com/reel/{reel_id}/"
+            if reel_id and not reel_id.startswith("vid_") and not reel_id.startswith("unknown")
+            else "https://www.instagram.com/reels/"
+        )
 
-        print(f"[ProfileInspector] Returning to exact Reel: {canonical_reel} (ID: {reel_id})...")
+        print(f"[ProfileInspector] Returning to Reel: {canonical_reel} (ID: {reel_id})...")
 
-        # Check if page is already on this specific reel
         current_url = self.page.url.lower()
-        specific_match = reel_id and (reel_id.lower() in current_url)
+        already_on_reel = reel_id and reel_id.lower() in current_url
 
-        if not specific_match:
-            print(f"[ProfileInspector] Navigating directly to exact Reel: {canonical_reel}")
+        if not already_on_reel:
+            print(f"[ProfileInspector] Navigating to: {canonical_reel}")
             try:
                 await self.page.goto(canonical_reel, wait_until="domcontentloaded")
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(2.0)  # Wait for video and comments button to render
             except Exception as e:
                 print(f"[ProfileInspector] Reel navigation error: {e}")
+        else:
+            print(f"[ProfileInspector] Already on reel page. Reopening comments...")
+            await asyncio.sleep(0.5)
 
         # Confirm comments are reopened on this exact reel
         if not await comment_reader.is_comments_open():
             print("[ProfileInspector] Reopening comments panel...")
             await comment_reader.open_comments()
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(1.0)
 

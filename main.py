@@ -59,20 +59,24 @@ async def run_agent():
 
     try:
         while True:
-            # 1. Wait for user to scroll and settle for 15 seconds (auto-skips already-processed reels)
+            # 1. Wait for user to scroll and settle for cooldown seconds (auto-skips already-processed reels)
             reel_context = await reel_detector.wait_for_user_to_settle_on_reel(state_manager=state_manager)
 
             console.print(f"\n[bold magenta]════════════════════════════════════════════════════════════[/bold magenta]")
             console.print(f"[bold white]Inspecting Reel:[/bold white] [cyan]{reel_context.reel_id}[/cyan] by @[yellow]{reel_context.author}[/yellow]")
+            console.print(f"[dim]URL: {reel_context.url}[/dim]")
             if reel_context.caption:
                 console.print(f"[dim]Caption: {reel_context.caption[:120]}...[/dim]")
 
             session_logger.record_reel_inspected()
 
-            # 2. Open Comments Section
+            # 2. Open Comments Section — wait for page to be fully ready first
+            await asyncio.sleep(1.0)
             comments_opened = await comment_reader.open_comments()
             if not comments_opened:
-                console.print("[yellow]Could not open comments section for this Reel. Waiting for next scroll...[/yellow]")
+                console.print("[yellow]⚠ Could not open comments section for this Reel. Skipping to next...[/yellow]")
+                state_manager.mark_reel_processed(reel_context.reel_id)  # Mark to avoid re-trying stuck reel
+                await reel_detector.navigate_to_next_reel()
                 continue
 
             await asyncio.sleep(1.5)
@@ -82,8 +86,11 @@ async def run_agent():
             console.print(f"[cyan]Found {len(comments)} accessible comment(s) on this Reel.[/cyan]")
 
             if not comments:
-                console.print("[dim]No comments to inspect. Closing panel and waiting for next Reel...[/dim]")
+                console.print("[dim]No comments found on this Reel. Marking done and advancing to next...[/dim]")
+                state_manager.mark_reel_processed(reel_context.reel_id)
                 await comment_reader.close_comments()
+                if settings.auto_next_reel:
+                    await reel_detector.navigate_to_next_reel()
                 continue
 
             # 4. Investigate each commenter individually
