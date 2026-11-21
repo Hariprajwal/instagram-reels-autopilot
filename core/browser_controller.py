@@ -1,4 +1,8 @@
+import os
+import shutil
+import socket
 import asyncio
+import subprocess
 from typing import Optional, List
 from playwright.async_api import async_playwright, Playwright, Browser, BrowserContext, Page
 from config.settings import settings
@@ -11,20 +15,120 @@ class BrowserController:
         self.page: Optional[Page] = None
         self.selectors = settings.load_selectors()
 
+    @staticmethod
+    def _is_port_in_use(port: int = 9222, host: str = "127.0.0.1") -> bool:
+        """Checks if a local TCP port is already accepting connections."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                return s.connect_ex((host, port)) == 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def _find_chrome_executable() -> Optional[str]:
+        """Locates the Google Chrome binary on standard Windows installation paths."""
+        candidates = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%PROGRAMFILES(X86)%\Google\Chrome\Application\chrome.exe")
+        ]
+        for p in candidates:
+            if os.path.isfile(p):
+                return p
+        return shutil.which("chrome") or shutil.which("google-chrome")
+
+    @staticmethod
+    def _is_chrome_process_running() -> bool:
+        """Checks if any chrome.exe process is currently running on the system."""
+        try:
+            output = subprocess.check_output(
+                ["tasklist", "/FI", "IMAGENAME eq chrome.exe"],
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+            )
+            return "chrome.exe" in output.lower()
+        except Exception:
+            return False
+
+    async def _auto_launch_chrome(self) -> bool:
+        """
+        Automatically launches Google Chrome with --remote-debugging-port=9222.
+        If Chrome is already running without remote debugging, restarts it with
+        --restore-last-session so existing tabs and Instagram logins are preserved.
+        """
+        chrome_bin = self._find_chrome_executable()
+        if not chrome_bin:
+            raise FileNotFoundError(
+                "[BrowserController] Google Chrome was not found in standard directories.\n"
+                "Please ensure Google Chrome is installed on your computer."
+            )
+
+        print("\n[BrowserController] Chrome is not active on port 9222.")
+        if self._is_chrome_process_running():
+            print("[BrowserController] Existing Chrome process detected without debugging port.")
+            print("[BrowserController] Restarting Chrome with --remote-debugging-port=9222 (restoring last session)...")
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", "chrome.exe"],
+                    capture_output=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+                )
+                await asyncio.sleep(1.8)
+            except Exception as e:
+                print(f"[BrowserController] Process termination warning: {e}")
+
+        print(f"[BrowserController] Launching Chrome from: {chrome_bin}...")
+        cmd = [
+            chrome_bin,
+            "--remote-debugging-port=9222",
+            "--remote-allow-origins=*",
+            "--disable-blink-features=AutomationControlled",
+            "--restore-last-session",
+            "https://www.instagram.com/reels/"
+        ]
+
+        try:
+            subprocess.Popen(
+                cmd,
+                shell=False,
+                creationflags=subprocess.DETACHED_PROCESS if hasattr(subprocess, "DETACHED_PROCESS") else 0
+            )
+        except Exception as e:
+            raise RuntimeError(f"[BrowserController] Failed to launch Chrome process: {e}")
+
+        print("[BrowserController] Waiting for Chrome remote debugging port to become ready...")
+        for attempt in range(24):
+            await asyncio.sleep(0.5)
+            if self._is_port_in_use(9222):
+                print("[BrowserController] ✓ Chrome remote debugging is active on http://127.0.0.1:9222!")
+                await asyncio.sleep(1.2)
+                return True
+
+        raise TimeoutError("[BrowserController] Timed out waiting for Chrome to open remote debugging port 9222.")
+
     async def connect(self) -> Page:
-        """Connects to the already-running Chrome window via CDP."""
-        print(f"[BrowserController] Connecting to Chrome CDP at {settings.chrome_cdp_url}...")
+        """
+        Connects to Chrome via CDP.
+        If port 9222 is not yet open, automatically launches Google Chrome with
+        remote debugging enabled so manual pre-launching is never required.
+        """
         self.playwright = await async_playwright().start()
 
+        # Step 1: Automatically ensure Chrome is running on port 9222
+        if not self._is_port_in_use(9222):
+            await self._auto_launch_chrome()
+
+        # Step 2: Connect over CDP
+        print(f"[BrowserController] Connecting to Chrome CDP at {settings.chrome_cdp_url}...")
         try:
             self.browser = await self.playwright.chromium.connect_over_cdp(settings.chrome_cdp_url)
         except Exception as e:
-            raise ConnectionError(
-                f"\n[ERROR] Could not connect to Chrome on {settings.chrome_cdp_url}.\n"
-                f"Please ensure Google Chrome was launched with '--remote-debugging-port=9222'.\n"
-                f"You can launch it easily by running 'launch_chrome.bat' or 'launch_chrome.ps1'.\n"
-                f"Original error: {e}"
-            )
+            print(f"[BrowserController] Initial connection attempt failed ({e}). Retrying auto-launch...")
+            await self._auto_launch_chrome()
+            self.browser = await self.playwright.chromium.connect_over_cdp(settings.chrome_cdp_url)
 
         contexts = self.browser.contexts
         if not contexts:
