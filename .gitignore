@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .env
 session_data/screenshots/*
+session_data/chrome_profile/
 session_data/*.json
 session_data/*.csv
 .vscode/

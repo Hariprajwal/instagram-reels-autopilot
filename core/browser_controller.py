@@ -124,6 +124,7 @@ class BrowserController:
 
             self.context = contexts[0]
             self.page = await self._find_or_wait_for_instagram_tab()
+            await self._handle_auto_login_if_needed(self.page)
             print(f"[BrowserController] Successfully attached to Instagram tab: {self.page.url}")
             return self.page
         except Exception as e:
@@ -133,6 +134,155 @@ class BrowserController:
                 except Exception:
                     pass
             raise e
+
+    async def _handle_auto_login_if_needed(self, page: Page) -> bool:
+        """
+        Detects if Instagram is showing a login page or login prompt.
+        If credentials are provided in settings, automatically fills username and password,
+        submits login, dismisses post-login prompts, and navigates to Reels.
+        """
+        await asyncio.sleep(1.0)
+
+        # Check if login form is present
+        is_login = False
+        current_url = page.url.lower()
+        if "/accounts/login" in current_url:
+            is_login = True
+        else:
+            try:
+                user_input = await page.wait_for_selector(
+                    "input[name='username'], input[aria-label*='username'], input[aria-label*='Mobile number']",
+                    timeout=1800,
+                    state="visible"
+                )
+                pass_input = await page.wait_for_selector(
+                    "input[name='password'], input[type='password']",
+                    timeout=1800,
+                    state="visible"
+                )
+                if user_input and pass_input:
+                    is_login = True
+            except Exception:
+                is_login = False
+
+        if not is_login:
+            return True
+
+        username = settings.instagram_username
+        password = settings.instagram_password
+
+        if not username or not password:
+            print("\n" + "=" * 70)
+            print(" [INSTAGRAM LOGIN REQUIRED]")
+            print(" Instagram is displaying the login page, but credentials were not found in .env.")
+            print(" >>> PLEASE LOG IN TO INSTAGRAM IN YOUR CHROME WINDOW <<<")
+            print(" (Your login will be saved permanently in session_data/chrome_profile)")
+            print("=" * 70 + "\n")
+            return True
+
+        print(f"\n[BrowserController] Instagram login screen detected. Automatically logging in as @{username}...")
+
+        try:
+            # 1. Fill username
+            user_el = await page.wait_for_selector(
+                "input[name='username'], input[aria-label*='username'], input[aria-label*='Mobile number']",
+                timeout=3000,
+                state="visible"
+            )
+            if user_el:
+                await user_el.click()
+                await user_el.fill("")
+                await user_el.type(username, delay=35)
+                await asyncio.sleep(0.3)
+
+            # 2. Fill password
+            pass_el = await page.wait_for_selector(
+                "input[name='password'], input[type='password']",
+                timeout=3000,
+                state="visible"
+            )
+            if pass_el:
+                await pass_el.click()
+                await pass_el.fill("")
+                await pass_el.type(password, delay=35)
+                await asyncio.sleep(0.5)
+
+            # 3. Click Log In button
+            login_btn = await page.wait_for_selector(
+                "button[type='submit'], button:has-text('Log in'), button:has-text('Log In'), div[role='button']:has-text('Log in')",
+                timeout=2500,
+                state="visible"
+            )
+            if login_btn:
+                await login_btn.click()
+                print("[BrowserController] Clicked 'Log in' button. Authenticating...")
+            else:
+                await page.keyboard.press("Enter")
+
+            # 4. Wait for authentication navigation
+            for _ in range(20):
+                await asyncio.sleep(0.6)
+                if await self.check_security_checkpoint():
+                    await self.wait_for_user_to_resolve_checkpoint()
+                    break
+
+                current_url = page.url.lower()
+                if "/accounts/login" not in current_url:
+                    try:
+                        if not await page.is_visible("input[name='password']", timeout=400):
+                            break
+                    except Exception:
+                        break
+
+            # 5. Dismiss "Save your login info?" dialog if present
+            await asyncio.sleep(1.2)
+            save_selectors = [
+                "button:has-text('Save info')",
+                "button:has-text('Save Info')",
+                "button:has-text('Not now')",
+                "button:has-text('Not Now')",
+                "div[role='button']:has-text('Not now')"
+            ]
+            for sel in save_selectors:
+                try:
+                    btn = await page.wait_for_selector(sel, timeout=1200, state="visible")
+                    if btn:
+                        await btn.click()
+                        print("[BrowserController] Handled login info dialog.")
+                        await asyncio.sleep(0.8)
+                        break
+                except Exception:
+                    continue
+
+            # 6. Dismiss "Turn on notifications" dialog if present
+            notif_selectors = [
+                "button:has-text('Not Now')",
+                "button:has-text('Not now')",
+                "div[role='button']:has-text('Not now')"
+            ]
+            for sel in notif_selectors:
+                try:
+                    btn = await page.wait_for_selector(sel, timeout=1000, state="visible")
+                    if btn:
+                        await btn.click()
+                        print("[BrowserController] Handled notifications dialog.")
+                        await asyncio.sleep(0.5)
+                        break
+                except Exception:
+                    continue
+
+            # 7. Ensure active page is on Reels
+            if "/reels" not in page.url.lower():
+                print("[BrowserController] Navigating to Instagram Reels...")
+                await page.goto("https://www.instagram.com/reels/", wait_until="domcontentloaded")
+                await asyncio.sleep(1.5)
+
+            print(f"[BrowserController] ✓ Successfully logged in and ready on Instagram Reels!")
+            return True
+
+        except Exception as e:
+            print(f"[BrowserController] Auto-login notice: {e}. You can log in manually in Chrome.")
+            return False
 
     async def _find_or_wait_for_instagram_tab(self) -> Page:
         """Finds an open tab with instagram.com or attaches to the first active tab."""

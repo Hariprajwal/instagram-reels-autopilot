@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -20,7 +21,36 @@ for d in [SESSION_DATA_DIR, SCREENSHOTS_DIR, REEL_SCREENSHOTS_DIR, PROFILE_SCREE
 # Load .env file
 load_dotenv(BASE_DIR / ".env")
 
+def _load_ig_credentials():
+    u = os.getenv("INSTAGRAM_USERNAME", "").strip()
+    p = os.getenv("INSTAGRAM_PASSWORD", "").strip()
+    if u and p:
+        return u, p
+    env_file = BASE_DIR / ".env"
+    if env_file.exists():
+        with open(env_file, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                lower = line.lower()
+                if any(lower.startswith(k) for k in ["instagram_username", "username"]):
+                    parts = re.split(r"[:=]", line, maxsplit=1)
+                    if len(parts) == 2 and not u:
+                        u = parts[1].strip()
+                elif any(lower.startswith(k) for k in ["instagram_password", "password"]):
+                    parts = re.split(r"[:=]", line, maxsplit=1)
+                    if len(parts) == 2 and not p:
+                        p = parts[1].strip()
+    return u, p
+
+_ig_user, _ig_pass = _load_ig_credentials()
+
 class AgentSettings(BaseModel):
+    # Instagram Credentials for auto-login
+    instagram_username: str = Field(default=_ig_user)
+    instagram_password: str = Field(default=_ig_pass)
+
     # Chrome CDP settings
     chrome_cdp_url: str = Field(default=os.getenv("CHROME_CDP_URL", "http://127.0.0.1:9222"))
     chrome_user_data_dir: Path = Field(default=CHROME_PROFILE_DIR)
