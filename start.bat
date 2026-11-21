@@ -31,16 +31,8 @@ if "%CHROME_BIN%"=="" (
     exit /b 1
 )
 
-:: Check if Chrome is already open without debugging port
-tasklist /FI "IMAGENAME eq chrome.exe" 2>NUL | find /I /N "chrome.exe">NUL
-if "%ERRORLEVEL%"=="0" (
-    echo [INFO] Chrome is running without port 9222. Restarting Chrome with debugging port...
-    taskkill /F /IM chrome.exe >nul 2>&1
-    timeout /t 2 /nobreak >nul
-)
-
-echo [1/2] Launching Google Chrome on port 9222 (Reels)...
-start "" "%CHROME_BIN%" --remote-debugging-port=9222 --remote-allow-origins=* --disable-blink-features=AutomationControlled --restore-last-session "https://www.instagram.com/reels/"
+echo [1/2] Launching dedicated Google Chrome on port 9222 (Reels)...
+start "" "%CHROME_BIN%" --remote-debugging-port=9222 --user-data-dir="%~dp0session_data\chrome_profile" --remote-allow-origins=* --disable-blink-features=AutomationControlled "https://www.instagram.com/reels/"
 
 :: Wait up to 10 seconds for Chrome CDP port to open
 echo [INFO] Waiting for Chrome remote debugging to initialize...

@@ -11,9 +11,10 @@ SESSION_DATA_DIR = BASE_DIR / "session_data"
 SCREENSHOTS_DIR = SESSION_DATA_DIR / "screenshots"
 REEL_SCREENSHOTS_DIR = SCREENSHOTS_DIR / "reels"
 PROFILE_SCREENSHOTS_DIR = SCREENSHOTS_DIR / "profiles"
+CHROME_PROFILE_DIR = SESSION_DATA_DIR / "chrome_profile"
 
 # Ensure directories exist
-for d in [SESSION_DATA_DIR, SCREENSHOTS_DIR, REEL_SCREENSHOTS_DIR, PROFILE_SCREENSHOTS_DIR]:
+for d in [SESSION_DATA_DIR, SCREENSHOTS_DIR, REEL_SCREENSHOTS_DIR, PROFILE_SCREENSHOTS_DIR, CHROME_PROFILE_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # Load .env file
@@ -22,6 +23,7 @@ load_dotenv(BASE_DIR / ".env")
 class AgentSettings(BaseModel):
     # Chrome CDP settings
     chrome_cdp_url: str = Field(default=os.getenv("CHROME_CDP_URL", "http://127.0.0.1:9222"))
+    chrome_user_data_dir: Path = Field(default=CHROME_PROFILE_DIR)
     reel_cooldown_seconds: float = Field(default=float(os.getenv("REEL_COOLDOWN_SECONDS", "3.5")))
     navigation_mode: str = Field(default=os.getenv("NAVIGATION_MODE", "in_tab"))  # in_tab or new_tab
     eligibility_mode: str = Field(default=os.getenv("ELIGIBILITY_MODE", "engaged"))  # engaged or strict

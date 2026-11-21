@@ -55,9 +55,11 @@ class BrowserController:
 
     async def _auto_launch_chrome(self) -> bool:
         """
-        Automatically launches Google Chrome with --remote-debugging-port=9222.
-        If Chrome is already running without remote debugging, restarts it with
-        --restore-last-session so existing tabs and Instagram logins are preserved.
+        Automatically launches Google Chrome with --remote-debugging-port=9222 and a
+        dedicated user-data-dir in session_data/chrome_profile.
+        Using a dedicated profile guarantees that Chrome opens a standalone debugging
+        window with port 9222 active, without attaching to existing personal Chrome
+        windows or requiring personal Chrome to be closed.
         """
         chrome_bin = self._find_chrome_executable()
         if not chrome_bin:
@@ -66,27 +68,17 @@ class BrowserController:
                 "Please ensure Google Chrome is installed on your computer."
             )
 
-        print("\n[BrowserController] Chrome is not active on port 9222.")
-        if self._is_chrome_process_running():
-            print("[BrowserController] Existing Chrome process detected without debugging port.")
-            print("[BrowserController] Restarting Chrome with --remote-debugging-port=9222 (restoring last session)...")
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/IM", "chrome.exe"],
-                    capture_output=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-                )
-                await asyncio.sleep(1.8)
-            except Exception as e:
-                print(f"[BrowserController] Process termination warning: {e}")
+        profile_dir = str(getattr(settings, "chrome_user_data_dir", os.path.join("session_data", "chrome_profile")))
+        os.makedirs(profile_dir, exist_ok=True)
 
-        print(f"[BrowserController] Launching Chrome from: {chrome_bin}...")
+        print("\n[BrowserController] Chrome is not active on port 9222.")
+        print(f"[BrowserController] Launching dedicated Chrome on port 9222 (profile: {profile_dir})...")
         cmd = [
             chrome_bin,
             "--remote-debugging-port=9222",
+            f"--user-data-dir={profile_dir}",
             "--remote-allow-origins=*",
             "--disable-blink-features=AutomationControlled",
-            "--restore-last-session",
             "https://www.instagram.com/reels/"
         ]
 
@@ -115,29 +107,32 @@ class BrowserController:
         If port 9222 is not yet open, automatically launches Google Chrome with
         remote debugging enabled so manual pre-launching is never required.
         """
-        self.playwright = await async_playwright().start()
-
-        # Step 1: Automatically ensure Chrome is running on port 9222
-        if not self._is_port_in_use(9222):
-            await self._auto_launch_chrome()
-
-        # Step 2: Connect over CDP
-        print(f"[BrowserController] Connecting to Chrome CDP at {settings.chrome_cdp_url}...")
         try:
+            self.playwright = await async_playwright().start()
+
+            # Step 1: Automatically ensure Chrome is running on port 9222
+            if not self._is_port_in_use(9222):
+                await self._auto_launch_chrome()
+
+            # Step 2: Connect over CDP
+            print(f"[BrowserController] Connecting to Chrome CDP at {settings.chrome_cdp_url}...")
             self.browser = await self.playwright.chromium.connect_over_cdp(settings.chrome_cdp_url)
+
+            contexts = self.browser.contexts
+            if not contexts:
+                raise RuntimeError("No browser context found in running Chrome instance.")
+
+            self.context = contexts[0]
+            self.page = await self._find_or_wait_for_instagram_tab()
+            print(f"[BrowserController] Successfully attached to Instagram tab: {self.page.url}")
+            return self.page
         except Exception as e:
-            print(f"[BrowserController] Initial connection attempt failed ({e}). Retrying auto-launch...")
-            await self._auto_launch_chrome()
-            self.browser = await self.playwright.chromium.connect_over_cdp(settings.chrome_cdp_url)
-
-        contexts = self.browser.contexts
-        if not contexts:
-            raise RuntimeError("No browser context found in running Chrome instance.")
-
-        self.context = contexts[0]
-        self.page = await self._find_or_wait_for_instagram_tab()
-        print(f"[BrowserController] Successfully attached to Instagram tab: {self.page.url}")
-        return self.page
+            if self.playwright:
+                try:
+                    await self.playwright.stop()
+                except Exception:
+                    pass
+            raise e
 
     async def _find_or_wait_for_instagram_tab(self) -> Page:
         """Finds an open tab with instagram.com or attaches to the first active tab."""
