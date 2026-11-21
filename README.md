@@ -20,6 +20,8 @@
 - **Natural Human Navigation**: Employs genuine mouse-wheel scrolling across viewport heights to advance between Reels, preventing feed resets or infinite loops.
 - **Intelligent Anti-Spam Filters**: Automatically filters out Hinglish and English engagement bait (e.g., "story dekho", "check my bio", "follow back", "f4f").
 - **Meta Checkpoint Watchdog**: Detects security challenges and reCAPTCHA prompts, plays an audible alert, pauses safely, and automatically resumes once verified.
+<img width="1107" height="315" alt="image" src="https://github.com/user-attachments/assets/05a05625-a3b8-4222-888e-0f12e9ff0711" />
+
 
 ---
 
