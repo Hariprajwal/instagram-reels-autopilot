@@ -14,49 +14,73 @@ from models.schemas import (
     ProspectAnalysis
 )
 
-ANALYSIS_SYSTEM_PROMPT = """You are an authentic, highly charismatic Instagram creator communicating directly with followers in DMs.
-Your job is to inspect an Instagram Reel comment and the commenter's profile to evaluate:
-1. Comment Intent: (EXPLICITLY_INTERESTED, ASKING_FOR_INFO, PURCHASE_INTENT, COLLABORATION, CASUAL_ENGAGEMENT, UNRELATED, UNCERTAIN)
-2. Explicit DM Permission: (EXPLICIT_INVITATION, EXISTING_PERMISSION, NO_EXPLICIT_PERMISSION, EXPLICIT_REFUSAL)
-   CRITICAL: You must NEVER assume a positive comment welcomes a DM. Only comments explicitly asking to be messaged (e.g. "DM me", "send info to my DM", "check inbox") qualify as EXPLICIT_INVITATION.
-3. Decision:
-   - ELIGIBLE: The commenter explicitly welcomes a private message or actively engaged with an open message option.
-   - INTERESTED_BUT_NO_PERMISSION: The commenter appears interested but has NOT explicitly invited a DM.
-   - NOT_INTERESTED: Casual engagement, generic praise, emojis, or unrelated chat.
-   - UNAVAILABLE: Profile or messaging option cannot be accessed.
-   - DO_NOT_CONTACT: The person refuses messages or has opted out.
-   - UNCERTAIN: Insufficient evidence.
+ANALYSIS_SYSTEM_PROMPT = """You are a sharp, witty, emotionally intelligent Instagram creator sliding into someone's DMs after seeing their comment on your Reel. You are NOT a bot. You are NOT a marketer. You are a real person who genuinely noticed their comment and had a real reaction to it.
 
-4. STRICT SELF-PROMO & SPAM REJECTION:
-   - NEVER classify commenters who post engagement-bait, self-promotional spam, or ask people to view their story, profile, or bio (e.g. "check my story", "story dekho", "ek bar story chek kro", "mera profile dekho", "check my profile", "link in bio", "check bio", "follow back", "f4f") as ELIGIBLE.
-   - Always mark them as:
-     "comment_intent": "UNRELATED",
-     "dm_permission": "NO_EXPLICIT_PERMISSION",
-     "decision": "NOT_INTERESTED",
-     "reasoning": "Self-promotional spam / story or profile engagement bait."
+Your job:
+1. Evaluate the comment for intent and eligibility.
+2. If ELIGIBLE — craft a hyper-personalized, varied-length DM conversation sequence (2 to 4 messages) that feels 100% human.
 
-5. Human Multi-Message Generation (ONLY if ELIGIBLE):
-   Write with MAXIMUM creativity, wit, unpredictability, and authentic emotional intelligence.
-   Every single message must feel genuinely handwritten by a real person, not an AI template.
-   
-   STRICT ANTI-ROBOT RULES:
-   - NEVER use corporate or generic marketing clichés: DO NOT say "Let me know your thoughts", "Let me know what you think", "Hope you're having a great day", "What was your favorite part", "Thanks for reaching out", "Happy to help", or "Hope this helps".
-   - Talk like a real, cool, authentic person on Instagram DMs. Match their language, vibe, and energy (English, casual slang, Hinglish, emojis).
-   - Never use the same repetitive question structure. Vary your phrasing, tone, and perspective every time.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1 — EVALUATE INTENT & ELIGIBILITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Comment Intent options: EXPLICITLY_INTERESTED | ASKING_FOR_INFO | PURCHASE_INTENT | COLLABORATION | CASUAL_ENGAGEMENT | UNRELATED | UNCERTAIN
+DM Permission options: EXPLICIT_INVITATION | EXISTING_PERMISSION | NO_EXPLICIT_PERMISSION | EXPLICIT_REFUSAL
 
-   - message_1_quote: The commenter's exact comment text WITHOUT artificial quotation marks or brackets (e.g. {comment_text}).
-   - suggested_question: A thoughtful, high-vibe, hyper-personalized reaction and single question reacting directly to their exact words and the Reel's specific theme (< 25 words, exactly 1 question mark).
-   - message_3_optional: An optional natural short human closing (e.g. "I can drop the link if you want", "That scene was wild haha"), or null.
+Decision:
+- ELIGIBLE: Message button visible + commenter actively engaged (or explicitly invited a DM).
+- INTERESTED_BUT_NO_PERMISSION: Interest shown but zero explicit DM invite.
+- NOT_INTERESTED: Generic praise, emojis only, unrelated filler.
+- UNAVAILABLE: Messaging not possible.
+- DO_NOT_CONTACT: They refused or opted out.
+- UNCERTAIN: Not enough info.
 
-Respond strictly in valid JSON matching this schema:
+SPAM RULE — Automatically NOT_INTERESTED if comment contains: "check my story", "story dekho", "ek bar story chek kro", "mera profile dekho", "check my profile", "link in bio", "check bio", "follow back", "f4f", engagement bait of any kind.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2 — WRITE THE DM SEQUENCE (ELIGIBLE ONLY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generate between 2 and 4 separate DM messages. Each message is a standalone bubble — short or long, whatever feels natural.
+
+THE GOLDEN RULES — Read every single one:
+
+🔥 RULE 1 — ANCHOR TO THEIR EXACT WORDS
+  msg_1 must echo their comment back — but make it feel like you genuinely clocked what they said, not a copy-paste. Example: they said "bhai yeh kya scene tha 😂" → open with something like "bhai scene wala comment notice ho gaya 😂"
+
+🔥 RULE 2 — VARY TONE & LENGTH DYNAMICALLY
+  Some messages should be 3 words. Some should be 2 sentences. Mix it up completely. Never uniform. Here are real human DM energy levels to rotate between:
+  - Hype energy ("bro that comment got me 💀")
+  - Curious ("wait — what exactly made you stop at that part?")
+  - Direct and confident ("so I figured I'd hit you up directly")
+  - Casual offhand ("lowkey that reel moment was kinda wild tbh")
+  - Warmly genuine ("honestly that really hits different when someone actually gets it")
+
+🔥 RULE 3 — USE THE REEL CAPTION/CONTEXT
+  Tie at least one message to the Reel itself. Reference its theme, topic, mood, or specific moment. Make the person feel like you're talking about *that* specific Reel, not sending a template.
+
+🔥 RULE 4 — MATCH THEIR LANGUAGE
+  If they wrote in Hindi/Hinglish → respond in Hinglish. If English → English. If emoji-heavy → match emoji energy. If formal → be less slangy. Mirror them.
+
+🔥 RULE 5 — EXACTLY ONE QUESTION (in msg_2 or msg_3)
+  Ask ONE real, specific question directly tied to their comment or the Reel. Max 25 words. Never compound questions. Never "What do you think?" or "How are you?".
+
+🔥 RULE 6 — ZERO CLICHÉS. ZERO.
+  Banned forever: "Let me know your thoughts", "Thanks for reaching out", "Hope this helps", "Have a great day", "Happy to help", "I'd love to connect", "Feel free to reach out", "Excited to chat", "Looking forward to it".
+
+🔥 RULE 7 — msg_4 IS RARE (max 30% chance mentally)
+  Only add msg_4 if it adds something genuinely different — a soft CTA, a funny aside, or context. If it would be filler, leave it null.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — Respond in valid JSON only:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {
   "comment_intent": "EXPLICITLY_INTERESTED" | "ASKING_FOR_INFO" | "PURCHASE_INTENT" | "COLLABORATION" | "CASUAL_ENGAGEMENT" | "UNRELATED" | "UNCERTAIN",
   "dm_permission": "EXPLICIT_INVITATION" | "EXISTING_PERMISSION" | "NO_EXPLICIT_PERMISSION" | "EXPLICIT_REFUSAL",
   "decision": "ELIGIBLE" | "INTERESTED_BUT_NO_PERMISSION" | "NOT_INTERESTED" | "UNAVAILABLE" | "DO_NOT_CONTACT" | "UNCERTAIN",
-  "reasoning": "Brief explanation of the decision",
-  "message_1_quote": "Clean raw comment text without quotes if ELIGIBLE, otherwise null",
-  "suggested_question": "Creative, highly personalized human reaction/question if ELIGIBLE, otherwise null",
-  "message_3_optional": "Contextual casual human closing or null"
+  "reasoning": "1-sentence explanation of decision",
+  "msg_1": "Opening anchor message echoing their comment — feels like genuine recognition. Required if ELIGIBLE, else null.",
+  "msg_2": "Personalized reaction + the ONE question tied to their comment and Reel context. Required if ELIGIBLE, else null.",
+  "msg_3": "Optional followup — could be context, a soft CTA, a funny line, or extra warmth. null if not needed.",
+  "msg_4": "Only if it genuinely adds value — a rare final line. null in most cases."
 }
 """
 
@@ -104,12 +128,18 @@ def is_self_promo_or_spam(comment_text: str) -> Tuple[bool, Optional[str]]:
 
 class MessageSequenceAutomata:
     """
-    Finite State Automata for sequencing and validating Instagram DM conversations:
-    State 0 (QUOTE): Extracts and cleans the user's raw comment (no artificial quotes).
-    State 1 (REACTION): Generates/validates the personalized creative reaction + single question.
-    State 2 (FOLLOWUP): Evaluates optional followup with ~50% randomized frequency and zero clichés.
-    State 3 (OUTPUT): Yields ordered, validated message sequence ready for fast dispatch.
+    Builds and validates the final 2-4 message DM sequence from AI output.
+
+    Slots:
+      msg_1  — Anchor: echoes the comment, genuine recognition opener.
+      msg_2  — Personalized reaction + the ONE question (required).
+      msg_3  — Optional followup: context, soft CTA, funny aside, warmth.
+      msg_4  — Rare bonus line (≤30% chance). Only if genuinely adds value.
+
+    Also supports legacy keys (message_1_quote / suggested_question / message_3_optional)
+    so old rule-engine fallback results still work.
     """
+
     FORBIDDEN_CLICHES = [
         "let me know your thoughts",
         "let me know what you think",
@@ -117,37 +147,78 @@ class MessageSequenceAutomata:
         "hope this helps",
         "thanks for reaching out",
         "happy to help",
-        "hope you're having a great day"
+        "hope you're having a great day",
+        "i'd love to connect",
+        "feel free to reach out",
+        "excited to chat",
+        "looking forward to it",
+        "i'd be happy to",
+        "don't hesitate to",
     ]
 
     @classmethod
+    def _clean(cls, text: str) -> str:
+        """Strip wrapping quotes and ensure clean text."""
+        if not text:
+            return ""
+        text = text.strip()
+        if len(text) >= 2 and text[0] in ('"', "'") and text[-1] == text[0]:
+            text = text[1:-1].strip()
+        return text
+
+    @classmethod
+    def _is_valid(cls, text: str, existing: list) -> bool:
+        """Returns True if text is non-empty, non-cliché, and not a duplicate."""
+        if not text or len(text) < 3:
+            return False
+        lower = text.lower()
+        if any(cliche in lower for cliche in cls.FORBIDDEN_CLICHES):
+            return False
+        if text in existing:
+            return False
+        return True
+
+    @classmethod
+    def _enforce_one_question(cls, text: str) -> str:
+        """Trims to max 1 question mark."""
+        if text.count("?") > 1:
+            parts = text.split("?")
+            text = parts[0].strip() + "?"
+        return text
+
+    @classmethod
     def process_sequence(cls, comment_text: str, data: dict, fallback_q: str = None) -> list:
+        """
+        Builds the final ordered DM sequence (2–4 messages).
+        Reads new keys (msg_1..msg_4) first, falls back to legacy keys.
+        """
         sequence = []
 
-        # State 0: Raw Comment Quote (Natural, clean, no artificial double quotes)
-        raw_msg1 = (data.get("message_1_quote") or comment_text or "").strip()
-        if (raw_msg1.startswith('"') and raw_msg1.endswith('"')) or (raw_msg1.startswith("'") and raw_msg1.endswith("'")):
-            raw_msg1 = raw_msg1[1:-1].strip()
-        if raw_msg1:
-            sequence.append(raw_msg1)
+        # ── Slot 1: Anchor (required) ─────────────────────────────────────────
+        raw1 = cls._clean(data.get("msg_1") or data.get("message_1_quote") or comment_text or "")
+        if cls._is_valid(raw1, sequence):
+            sequence.append(raw1)
 
-        # State 1: Creative Personalized Reaction / Question
-        raw_msg2 = (data.get("suggested_question") or fallback_q or "").strip()
-        if raw_msg2:
-            # Enforce One-Question Rule (max 1 question mark)
-            if raw_msg2.count("?") > 1:
-                parts = raw_msg2.split("?")
-                raw_msg2 = parts[0].strip() + "?"
-            sequence.append(raw_msg2)
+        # ── Slot 2: Personalized reaction + 1 question (required) ────────────
+        raw2 = cls._clean(data.get("msg_2") or data.get("suggested_question") or fallback_q or "")
+        raw2 = cls._enforce_one_question(raw2)
+        if cls._is_valid(raw2, sequence):
+            sequence.append(raw2)
 
-        # State 2: Optional Contextual Followup (Randomized ~50% frequency, filtered for zero generic clichés)
-        # Allows Message 3 to be truly optional and dynamic
-        if random.random() < 0.50:
-            raw_msg3 = (data.get("message_3_optional") or "").strip()
-            if raw_msg3 and not any(cliche in raw_msg3.lower() for cliche in cls.FORBIDDEN_CLICHES):
-                if len(raw_msg3) > 3 and raw_msg3 != raw_msg2:
-                    sequence.append(raw_msg3)
+        # ── Slot 3: Optional followup ─────────────────────────────────────────
+        # Always include if AI generated it (AI already decided ~30-50% probability in prompt)
+        raw3 = cls._clean(data.get("msg_3") or data.get("message_3_optional") or "")
+        if cls._is_valid(raw3, sequence):
+            sequence.append(raw3)
 
+        # ── Slot 4: Rare bonus line (hard-capped at 30% even if AI provided it) ─
+        raw4 = cls._clean(data.get("msg_4") or "")
+        if raw4 and random.random() < 0.30 and cls._is_valid(raw4, sequence):
+            sequence.append(raw4)
+
+        # ── Safety: ensure at least 2 messages are sent ───────────────────────
+        # If AI only gave 1 and no fallback, duplicate-but-rephrase is better
+        # than sending just one robotic bubble — but we just return what we have.
         return sequence
 
 class AIClassifier:
@@ -300,9 +371,9 @@ Bio: {bio_text or "N/A"}
                             {"role": "user", "content": prompt}
                         ],
                         response_format={"type": "json_object"},
-                        temperature=0.88,
+                        temperature=0.92,
                         top_p=0.95,
-                        max_tokens=650
+                        max_tokens=900
                     )
                 except Exception as json_err:
                     err_str = str(json_err).lower()
@@ -313,9 +384,9 @@ Bio: {bio_text or "N/A"}
                                 {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
                                 {"role": "user", "content": prompt}
                             ],
-                            temperature=0.88,
+                            temperature=0.92,
                             top_p=0.95,
-                            max_tokens=650
+                            max_tokens=900
                         )
                     else:
                         raise json_err
@@ -360,9 +431,9 @@ Bio: {bio_text or "N/A"}
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.88,
+                    temperature=0.92,
                     top_p=0.95,
-                    max_tokens=650
+                    max_tokens=900
                 )
                 content = (response.choices[0].message.content or "").strip()
                 if content.startswith("```"):
@@ -490,6 +561,11 @@ Bio: {bio_text or "N/A"}
             "dm_permission": permission,
             "decision": decision,
             "reasoning": reasoning,
+            "msg_1": comment_text.strip() if decision == DecisionClassification.ELIGIBLE.value else None,
+            "msg_2": question,
+            "msg_3": opt_msg3,
+            "msg_4": None,
+            # Legacy keys kept for backward compat
             "message_1_quote": comment_text.strip() if decision == DecisionClassification.ELIGIBLE.value else None,
             "suggested_question": question,
             "message_3_optional": opt_msg3
