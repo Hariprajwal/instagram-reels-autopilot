@@ -195,10 +195,11 @@ class ReelDetector:
 
     async def navigate_to_next_reel(self) -> bool:
         """
-        Navigates to the next Reel when all comments on the current Reel are finished.
+        Navigates to the next Reel in sequence.
 
-        KEY FIX: ArrowDown+Enter only works on the /reels/ FEED, NOT on the specific
-        /reel/{id}/ page. So we always redirect to the feed first if needed, THEN advance.
+        STRATEGY: Use mouse.wheel() scroll — works on BOTH /reels/ feed AND /reel/{id}/ pages,
+        is the most human-like gesture, and does NOT reset back to reel-1 like navigating
+        to /reels/ does. Falls back to Down Arrow button click, then PageDown if scroll fails.
         """
         previous_id = self.current_reel_id
         if not previous_id or previous_id.startswith("unknown"):
@@ -207,26 +208,7 @@ class ReelDetector:
 
         print(f"\n[ReelDetector] ⚡ Advancing from Reel [{previous_id}] to NEXT Reel...")
 
-        # --- CRITICAL: Ensure we're on the /reels/ FEED before using keyboard shortcuts ---
-        # ArrowDown/Enter only works on the scrollable reels feed, NOT on /reel/{id}/ pages.
-        current_url = self.page.url
-        is_on_feed = "instagram.com/reels" in current_url.lower() and not (
-            # Specific reel page has an ID after /reels/ or is /reel/{id}/
-            any(c.isalpha() for c in current_url.split("/reels/")[-1].split("?")[0].replace("/", ""))
-        )
-        is_specific_reel = "/reel/" in current_url.lower() or (
-            "/reels/" in current_url.lower() and len(current_url.split("/reels/")[-1].strip("/")) > 3
-        )
-
-        if is_specific_reel:
-            print(f"[ReelDetector] On specific reel page. Navigating to /reels/ feed to enable keyboard navigation...")
-            try:
-                await self.page.goto("https://www.instagram.com/reels/", wait_until="domcontentloaded")
-                await asyncio.sleep(2.5)  # Give feed time to load and find the right reel
-            except Exception as e:
-                print(f"[ReelDetector] Feed navigation notice: {e}")
-
-        # Step 1: Focus the video area so keyboard events land on the reel player
+        # ── Step 1: Focus the viewport center (dismiss any floating UI) ──────────
         try:
             viewport = self.page.viewport_size or {"width": 1280, "height": 800}
             center_x = viewport["width"] / 2
@@ -240,36 +222,42 @@ class ReelDetector:
                     center_y = box["y"] + box["height"] / 2
 
             await self.page.mouse.click(center_x, center_y)
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.4)
         except Exception:
             try:
                 await self.page.focus("body")
             except Exception:
                 pass
 
-        # Step 2: Primary shortcut on the feed: ArrowDown → Enter
-        for attempt in range(2):  # Try twice in case first attempt is absorbed
-            try:
-                await self.page.keyboard.press("ArrowDown")
-                await asyncio.sleep(0.3)
-                await self.page.keyboard.press("Enter")
-                print(f"[ReelDetector] Triggered [ArrowDown → Enter] (attempt {attempt + 1}).")
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                print(f"[ReelDetector] Shortcut notice: {e}")
+        # ── Step 2: Mouse wheel scroll — primary method ───────────────────────────
+        # Scroll down by one full viewport height in two smooth steps (human-like).
+        # This works on the feed AND on specific /reel/{id}/ pages.
+        print("[ReelDetector] Scrolling down (mouse wheel) to advance to next Reel...")
+        try:
+            viewport = self.page.viewport_size or {"width": 1280, "height": 800}
+            scroll_target_x = viewport["width"] / 2
+            scroll_target_y = viewport["height"] / 2
+            scroll_amount = int(viewport["height"] * 0.9)  # ~90% of screen height
 
-            # Check if reel changed
-            for _ in range(5):
-                await asyncio.sleep(0.5)
-                check = await self.get_active_reel_info()
-                new_id = check["reel_id"]
-                if new_id and new_id != previous_id and not new_id.startswith("unknown"):
-                    print(f"[ReelDetector] ✓ Advanced to next Reel: [{new_id}]")
-                    self.current_reel_id = new_id
-                    return True
+            await self.page.mouse.wheel(0, scroll_amount)
+            await asyncio.sleep(0.5)
+            await self.page.mouse.wheel(0, scroll_amount // 3)  # Small nudge to confirm
+            await asyncio.sleep(1.5)
+        except Exception as e:
+            print(f"[ReelDetector] Scroll notice: {e}")
 
-        # Step 3: Circular Down Arrow button click fallback
-        print("[ReelDetector] Shortcut did not advance reel. Trying Down Arrow button click...")
+        # Check if scroll worked
+        for _ in range(6):
+            await asyncio.sleep(0.4)
+            check = await self.get_active_reel_info()
+            new_id = check["reel_id"]
+            if new_id and new_id != previous_id and not new_id.startswith("unknown"):
+                print(f"[ReelDetector] ✓ Scroll advanced to next Reel: [{new_id}]")
+                self.current_reel_id = new_id
+                return True
+
+        # ── Step 3: Click the on-screen Down Arrow button ─────────────────────────
+        print("[ReelDetector] Scroll did not advance. Trying Down Arrow button click...")
         js_click_down_arrow = """
         () => {
             const buttons = Array.from(document.querySelectorAll('div[role="button"], button'));
@@ -304,23 +292,34 @@ class ReelDetector:
                             break
                     except Exception:
                         continue
+            await asyncio.sleep(1.5)
         except Exception:
             pass
 
-        # Step 4: PageDown as final fallback
-        try:
-            await self.page.keyboard.press("PageDown")
-            await asyncio.sleep(1.0)
-        except Exception:
-            pass
-
-        # Final check
+        # Check if button click worked
         for _ in range(5):
             await asyncio.sleep(0.4)
             check = await self.get_active_reel_info()
             new_id = check["reel_id"]
             if new_id and new_id != previous_id and not new_id.startswith("unknown"):
-                print(f"[ReelDetector] ✓ Locked to next Reel: [{new_id}]")
+                print(f"[ReelDetector] ✓ Button click advanced to next Reel: [{new_id}]")
+                self.current_reel_id = new_id
+                return True
+
+        # ── Step 4: PageDown last resort ──────────────────────────────────────────
+        print("[ReelDetector] Trying PageDown as last resort...")
+        try:
+            await self.page.keyboard.press("PageDown")
+            await asyncio.sleep(1.5)
+        except Exception:
+            pass
+
+        for _ in range(5):
+            await asyncio.sleep(0.4)
+            check = await self.get_active_reel_info()
+            new_id = check["reel_id"]
+            if new_id and new_id != previous_id and not new_id.startswith("unknown"):
+                print(f"[ReelDetector] ✓ PageDown advanced to next Reel: [{new_id}]")
                 self.current_reel_id = new_id
                 return True
 
