@@ -293,25 +293,29 @@ class BrowserController:
             return False
 
     async def _find_or_wait_for_instagram_tab(self) -> Page:
-        """Finds an open tab with instagram.com or attaches to the first active tab."""
+        """Finds an open tab with instagram.com or attaches to the first active tab, ensuring it opens directly on Reels."""
+        target_url = "https://www.instagram.com/reels/"
         pages = self.context.pages
         for p in pages:
             if "instagram.com" in p.url:
                 await p.bring_to_front()
+                if "/reels" not in p.url.lower():
+                    print("[BrowserController] Navigating active Instagram tab directly to Reels...")
+                    await p.goto(target_url, wait_until="domcontentloaded")
                 return p
 
         # If not found, use first page and wait or navigate
         if pages:
             page = pages[0]
-            if "instagram.com" not in page.url:
-                print("[BrowserController] No active Instagram tab found. Navigating existing tab to Instagram Reels...")
-                await page.goto("https://www.instagram.com/reels/", wait_until="domcontentloaded")
+            if "/reels" not in page.url.lower():
+                print("[BrowserController] Navigating existing tab directly to Instagram Reels...")
+                await page.goto(target_url, wait_until="domcontentloaded")
             await page.bring_to_front()
             return page
 
         # If no pages at all (unlikely), create one in existing context
         page = await self.context.new_page()
-        await page.goto("https://www.instagram.com/reels/", wait_until="domcontentloaded")
+        await page.goto(target_url, wait_until="domcontentloaded")
         return page
 
     async def get_page(self) -> Page:
