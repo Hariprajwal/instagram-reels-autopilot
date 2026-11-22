@@ -9,6 +9,11 @@ from core.reel_detector import ReelDetector
 from core.comment_reader import CommentReader
 from core.profile_inspector import ProfileInspector
 from core.decision_engine import DecisionEngine
+from core.human_simulation import (
+    simulate_watching_reel, simulate_reading_comments_pause,
+    simulate_profile_glance, human_sleep, micro_pause,
+    gauss_delay, fatigue_model
+)
 from storage.session_logger import SessionLogger
 from storage.state_manager import StateManager
 from models.classifier import is_self_promo_or_spam
@@ -36,6 +41,9 @@ async def run_agent():
     console.print("\n[bold green]✓ Agent connected to Chrome![/bold green]")
     console.print("[cyan]The user controls navigation. Please scroll through Instagram Reels.[/cyan]")
     console.print(f"[cyan]When you settle on a Reel for {settings.reel_cooldown_seconds:.0f} seconds, investigation starts automatically.[/cyan]\n")
+
+    # Start the session fatigue model (tracks session age for natural slowdowns)
+    fatigue_model.session_start()
 
     # Periodic 1-Minute Live Metrics Dashboard Heartbeat + Mid-Session Cleanup
     async def periodic_stats_reporter():
@@ -70,8 +78,12 @@ async def run_agent():
 
             session_logger.record_reel_inspected()
 
-            # 2. Open Comments Section — wait for page to be fully ready first
-            await asyncio.sleep(1.0)
+            # 2. Simulate watching the Reel before touching comments (inbound ratio balance)
+            # This is CRITICAL: Real humans watch content first, then interact.
+            await simulate_watching_reel(page)
+
+            # 3. Open Comments Section — wait for page to be fully ready first
+            await human_sleep(1.2, 0.3)
             comments_opened = await comment_reader.open_comments()
             if not comments_opened:
                 console.print("[yellow]⚠ Could not open comments section for this Reel. Skipping to next...[/yellow]")
@@ -79,9 +91,10 @@ async def run_agent():
                 await reel_detector.navigate_to_next_reel()
                 continue
 
-            await asyncio.sleep(1.5)
+            # Simulate reading comments before processing (natural delay, Gaussian)
+            await simulate_reading_comments_pause()
 
-            # 3. Read accessible comments
+            # 4. Read accessible comments
             comments = await comment_reader.read_accessible_comments(reel_context.reel_id)
             console.print(f"[cyan]Found {len(comments)} accessible comment(s) on this Reel.[/cyan]")
 
@@ -127,8 +140,10 @@ async def run_agent():
                     console.print(f"[red]Could not click profile link for @{username}. Marking unavailable.[/red]")
                     profile_data = await profile_inspector.inspect(username)
                 else:
-                    # Wait for profile page to fully settle before inspecting or messaging
-                    await asyncio.sleep(max(settings.min_action_delay, 3.0))
+                    # Simulate glancing at profile (natural pause before inspecting)
+                    # Fatigue model scales this delay with session age
+                    await fatigue_model.apply_fatigue_delay(max(settings.min_action_delay, 3.0))
+                    await simulate_profile_glance()
                     # Check if checkpoint appeared on profile load
                     await browser_controller.wait_for_user_to_resolve_checkpoint()
                     profile_data = await profile_inspector.inspect(username)
@@ -202,7 +217,9 @@ async def run_agent():
                 await browser_controller.wait_for_user_to_resolve_checkpoint()
 
                 processed_count += 1
-                await asyncio.sleep(settings.min_action_delay)
+                # Fatigue-scaled inter-commenter delay + occasional micro-break
+                await fatigue_model.apply_fatigue_delay(settings.min_action_delay)
+                await fatigue_model.maybe_take_micro_break()
 
                 if processed_count >= settings.max_comments_per_reel:
                     console.print(f"[yellow]Reached limit of {settings.max_comments_per_reel} comments for this Reel.[/yellow]")

@@ -8,6 +8,7 @@ from playwright.async_api import Page
 
 from config.settings import settings, REEL_SCREENSHOTS_DIR
 from models.schemas import ReelContext
+from core.human_simulation import human_scroll_down, gauss_delay, micro_pause
 
 class ReelDetector:
     def __init__(self, page: Page):
@@ -230,19 +231,11 @@ class ReelDetector:
                 pass
 
         # ── Step 2: Mouse wheel scroll — primary method ───────────────────────────
-        # Scroll down by one full viewport height in two smooth steps (human-like).
-        # This works on the feed AND on specific /reel/{id}/ pages.
-        print("[ReelDetector] Scrolling down (mouse wheel) to advance to next Reel...")
+        # Natural Gaussian scroll (not exact fixed pixel amounts every time).
+        print("[ReelDetector] Scrolling down (human wheel simulation) to advance to next Reel...")
         try:
-            viewport = self.page.viewport_size or {"width": 1280, "height": 800}
-            scroll_target_x = viewport["width"] / 2
-            scroll_target_y = viewport["height"] / 2
-            scroll_amount = int(viewport["height"] * 0.9)  # ~90% of screen height
-
-            await self.page.mouse.wheel(0, scroll_amount)
-            await asyncio.sleep(0.5)
-            await self.page.mouse.wheel(0, scroll_amount // 3)  # Small nudge to confirm
-            await asyncio.sleep(1.5)
+            await human_scroll_down(self.page, viewport_fraction=0.9)
+            await asyncio.sleep(gauss_delay(1.5, 0.3, 0.8))
         except Exception as e:
             print(f"[ReelDetector] Scroll notice: {e}")
 

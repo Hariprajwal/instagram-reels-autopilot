@@ -9,6 +9,10 @@ from playwright.async_api import Page
 from config.settings import settings, PROFILE_SCREENSHOTS_DIR
 from models.schemas import ProfileData, MessageAvailability
 from core.comment_reader import CommentReader
+from core.human_simulation import (
+    human_sleep, micro_pause, human_click_element,
+    human_type, simulate_profile_glance, gauss_delay
+)
 
 class ProfileInspector:
     def __init__(self, page: Page):
@@ -294,11 +298,13 @@ class ProfileInspector:
                     print(f"[ProfileInspector] ⚠ Lost chat input before message {idx}. Stopping sequence.")
                     return idx > 1  # Partial success if at least one message sent
 
-                await current_input.click()
-                await asyncio.sleep(0.2)
-                await current_input.fill("")  # Clear any stale text
-                await current_input.type(clean_msg, delay=5)
-                await asyncio.sleep(0.2)
+                # Human-like click with natural cursor movement, then Gaussian typing
+                await human_click_element(self.page, current_input)
+                await micro_pause()
+                await current_input.fill("")  # Clear stale text
+                await asyncio.sleep(gauss_delay(0.15, 0.4, 0.05))
+                await human_type(self.page, current_input, clean_msg)
+                await asyncio.sleep(gauss_delay(0.3, 0.4, 0.15))  # Brief "re-read before sending" pause
 
                 if auto_send:
                     await self._dispatch_send_action(input_el=current_input)
