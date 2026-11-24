@@ -127,6 +127,11 @@ async def run_agent():
                     reel_done = True
                     break
 
+                # If new_batch is empty but we've already processed some → all currently visible
+                # comments are already seen. Fall through to the scroll logic below — it will
+                # scroll down and load the next batch (this naturally happens when comments
+                # re-open from the top after a profile visit).
+
                 # ── Process each unseen comment in the current visible batch ──
                 for comment in new_batch:
                     username = comment.username
@@ -233,17 +238,18 @@ async def run_agent():
                     console.print(f"[dim]✓ 'View hidden comments' marker visible — end of comment list reached.[/dim]")
                     break
 
-                # Spinner: Instagram is mid-load → wait and loop back to read the new batch
-                if await comment_reader._is_spinner_visible():
-                    console.print(f"[dim]⏳ Spinner detected — waiting for Instagram to load more comments...[/dim]")
-                    await comment_reader._wait_for_spinner_to_clear(max_wait=12.0)
-                    scroll_stall_rounds = 0
-                    continue  # Go back to top of while loop — new comments will be in new_batch
-
-                # No spinner, no end marker → scroll down to trigger next lazy-load batch
+                # Scroll down to trigger next lazy-load batch.
+                # We wait 2.5s after scrolling — this naturally covers any Instagram loading
+                # spinner time without needing to detect it (spinner detection causes false positives).
                 pre_scroll_count = len(await comment_reader.read_accessible_comments(reel_context.reel_id))
                 await comment_reader._scroll_comment_drawer(pixels=800)
-                await asyncio.sleep(1.3)
+                await asyncio.sleep(2.5)  # Covers spinner load time — no need to detect spinner
+
+                # Check again for end-of-list marker after the new batch loaded
+                if await comment_reader._is_end_of_comments():
+                    console.print(f"[dim]✓ 'View hidden comments' marker visible after scroll — end of comment list.[/dim]")
+                    break
+
                 post_scroll_count = len(await comment_reader.read_accessible_comments(reel_context.reel_id))
 
                 if post_scroll_count <= pre_scroll_count:
