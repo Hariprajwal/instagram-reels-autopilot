@@ -195,6 +195,30 @@ class CommentReader:
             pass
         return False
 
+    async def _is_end_of_comments(self) -> bool:
+        """
+        Returns True when Instagram shows the 'View hidden comments' marker —
+        this element appears only at the absolute bottom of the comment list,
+        meaning there are no more top-level comments to load.
+        """
+        try:
+            found = await self.page.evaluate("""
+            () => {
+                const dialog = document.querySelector('div[role="dialog"]')
+                            || document.querySelector('div[aria-label="Comments"]')
+                            || document.body;
+                // Look for any element whose visible text contains 'View hidden comments'
+                const all = Array.from(dialog.querySelectorAll('span, div, button, a'));
+                return all.some(el => {
+                    const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                    return t === 'view hidden comments' || t.includes('view hidden comments');
+                });
+            }
+            """)
+            return bool(found)
+        except Exception:
+            return False
+
     async def _wait_for_spinner_to_clear(self, max_wait: float = 8.0) -> None:
         """Waits until the loading spinner disappears (up to max_wait seconds)."""
         waited = 0.0

@@ -124,6 +124,12 @@ async def run_agent():
                     current_count = len(comments)
                     scroll_stall_rounds = 0  # Spinner means Instagram was loading — reset stall
 
+                # BEST stop signal: Instagram shows "View hidden comments" only at the
+                # absolute bottom of the accessible comment list — stop immediately.
+                if await comment_reader._is_end_of_comments():
+                    console.print(f"[dim]✓ 'View hidden comments' marker detected — true end of comment list. Total loaded: {current_count}[/dim]")
+                    break
+
                 # Stall detection: has comment count grown since last round?
                 if current_count <= prev_count:
                     scroll_stall_rounds += 1
