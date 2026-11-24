@@ -98,46 +98,47 @@ async def run_agent():
             total_comment_count = await comment_reader.get_total_comment_count()
             console.print(f"[dim]Instagram shows {total_comment_count} total comment(s) in sidebar.[/dim]")
 
-            # 4b. Infinite scroll the comment drawer to load ALL available comments
-            #     Instagram lazy-loads in batches ~12-15. We scroll, wait for spinner to clear,
-            #     scroll again — until no new comments appear (true end-of-list).
+            # 4b. Infinite scroll the comment drawer to load ALL available comments.
+            #     Instagram lazy-loads comments in batches as you scroll.
+            #     We ONLY stop when Instagram genuinely has nothing more to load:
+            #       → Spinner visible → wait for it to clear → scroll again
+            #       → No new comments loaded for MAX_STALL consecutive scroll rounds = true end-of-list
+            #     We do NOT use the sidebar counter (e.g. "90") as a stop signal —
+            #     it includes hidden replies and filtered comments we can never reach, so it's unreliable.
             console.print("[dim]Scrolling comment drawer to load all available comments...[/dim]")
             prev_count = 0
             scroll_stall_rounds = 0
-            MAX_STALL = 3  # If comment count doesn't grow for 3 scroll rounds → end of list
-            for _scroll_round in range(60):  # Safety cap: max 60 scroll rounds (≈ 900 comments)
+            MAX_STALL = 4  # 4 consecutive rounds of zero growth = true end-of-list
+            _scroll_round = 0
+            while True:
+                _scroll_round += 1
                 comments = await comment_reader.read_accessible_comments(reel_context.reel_id)
                 current_count = len(comments)
 
-                # If a spinner is visible at the bottom → wait for it to disappear
+                # If a spinner is visible at the bottom → Instagram is loading more → wait
                 if await comment_reader._is_spinner_visible():
-                    console.print(f"[dim]⏳ Comment loading spinner detected — waiting for more to load...[/dim]")
-                    await comment_reader._wait_for_spinner_to_clear(max_wait=10.0)
-                    # Read again after spinner clears
+                    console.print(f"[dim]⏳ Comment spinner detected (round {_scroll_round}) — waiting for Instagram to load more...[/dim]")
+                    await comment_reader._wait_for_spinner_to_clear(max_wait=12.0)
+                    # Re-read after spinner clears (new batch should be in the DOM now)
                     comments = await comment_reader.read_accessible_comments(reel_context.reel_id)
                     current_count = len(comments)
+                    scroll_stall_rounds = 0  # Spinner means Instagram was loading — reset stall
 
-                # Check if new comments were loaded this round
+                # Stall detection: has comment count grown since last round?
                 if current_count <= prev_count:
                     scroll_stall_rounds += 1
                     if scroll_stall_rounds >= MAX_STALL:
-                        console.print(f"[dim]No new comments after {MAX_STALL} scroll rounds — reached end of comment list.[/dim]")
+                        console.print(f"[dim]✓ End of comment list reached — no new comments after {MAX_STALL} scroll rounds. Total loaded: {current_count}[/dim]")
                         break
                 else:
-                    scroll_stall_rounds = 0  # Reset stall counter when progress is made
-                    console.print(f"[dim]Loaded {current_count} comments so far (was {prev_count})...[/dim]")
+                    scroll_stall_rounds = 0  # Progress → reset
+                    console.print(f"[dim]Loaded {current_count} comments (↑{current_count - prev_count} new) — scrolling more...[/dim]")
 
                 prev_count = current_count
 
-                # If we've loaded all visible comments (accounting for hidden/nested ones
-                # that inflate the counter), stop early
-                if total_comment_count > 0 and current_count >= total_comment_count:
-                    console.print(f"[dim]Loaded all {current_count} accessible comments (matches or exceeds UI count of {total_comment_count}).[/dim]")
-                    break
-
-                # Scroll down to trigger next batch
-                await comment_reader._scroll_comment_drawer(pixels=700)
-                await asyncio.sleep(1.2)  # Natural pause between scroll batches
+                # Scroll down inside the comment drawer to trigger next lazy-load batch
+                await comment_reader._scroll_comment_drawer(pixels=800)
+                await asyncio.sleep(1.3)  # Natural pause between scroll batches (human-like)
 
             console.print(f"[cyan]Found {len(comments)} accessible comment(s) on this Reel.[/cyan]")
 
@@ -269,13 +270,10 @@ async def run_agent():
                 await fatigue_model.maybe_take_micro_break()
 
                 # --- Exit condition ---
-                # Primary: visited_count matches or exceeds the accessible comment list
-                # Secondary: hard safety cap (max_comments_per_reel) to prevent runaway sessions
+                # We visited every profile that was accessible in the fully-loaded comment list.
+                # No fixed cap — reel is done when we've genuinely seen every commenter.
                 if visited_count >= len(comments):
-                    console.print(f"[dim]✓ Visited all {visited_count} accessible profiles for this Reel.[/dim]")
-                    break
-                if processed_count >= settings.max_comments_per_reel:
-                    console.print(f"[yellow]Safety cap reached ({settings.max_comments_per_reel} profiles processed). Moving to next Reel.[/yellow]")
+                    console.print(f"[dim]✓ Visited all {visited_count} accessible commenter profiles for this Reel.[/dim]")
                     break
 
             # 9. All comments for this Reel finished
