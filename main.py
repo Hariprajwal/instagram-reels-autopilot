@@ -94,8 +94,51 @@ async def run_agent():
             # Simulate reading comments before processing (natural delay, Gaussian)
             await simulate_reading_comments_pause()
 
-            # 4. Read accessible comments
-            comments = await comment_reader.read_accessible_comments(reel_context.reel_id)
+            # 4a. Read the total comment count shown in the UI sidebar (e.g. "90")
+            total_comment_count = await comment_reader.get_total_comment_count()
+            console.print(f"[dim]Instagram shows {total_comment_count} total comment(s) in sidebar.[/dim]")
+
+            # 4b. Infinite scroll the comment drawer to load ALL available comments
+            #     Instagram lazy-loads in batches ~12-15. We scroll, wait for spinner to clear,
+            #     scroll again — until no new comments appear (true end-of-list).
+            console.print("[dim]Scrolling comment drawer to load all available comments...[/dim]")
+            prev_count = 0
+            scroll_stall_rounds = 0
+            MAX_STALL = 3  # If comment count doesn't grow for 3 scroll rounds → end of list
+            for _scroll_round in range(60):  # Safety cap: max 60 scroll rounds (≈ 900 comments)
+                comments = await comment_reader.read_accessible_comments(reel_context.reel_id)
+                current_count = len(comments)
+
+                # If a spinner is visible at the bottom → wait for it to disappear
+                if await comment_reader._is_spinner_visible():
+                    console.print(f"[dim]⏳ Comment loading spinner detected — waiting for more to load...[/dim]")
+                    await comment_reader._wait_for_spinner_to_clear(max_wait=10.0)
+                    # Read again after spinner clears
+                    comments = await comment_reader.read_accessible_comments(reel_context.reel_id)
+                    current_count = len(comments)
+
+                # Check if new comments were loaded this round
+                if current_count <= prev_count:
+                    scroll_stall_rounds += 1
+                    if scroll_stall_rounds >= MAX_STALL:
+                        console.print(f"[dim]No new comments after {MAX_STALL} scroll rounds — reached end of comment list.[/dim]")
+                        break
+                else:
+                    scroll_stall_rounds = 0  # Reset stall counter when progress is made
+                    console.print(f"[dim]Loaded {current_count} comments so far (was {prev_count})...[/dim]")
+
+                prev_count = current_count
+
+                # If we've loaded all visible comments (accounting for hidden/nested ones
+                # that inflate the counter), stop early
+                if total_comment_count > 0 and current_count >= total_comment_count:
+                    console.print(f"[dim]Loaded all {current_count} accessible comments (matches or exceeds UI count of {total_comment_count}).[/dim]")
+                    break
+
+                # Scroll down to trigger next batch
+                await comment_reader._scroll_comment_drawer(pixels=700)
+                await asyncio.sleep(1.2)  # Natural pause between scroll batches
+
             console.print(f"[cyan]Found {len(comments)} accessible comment(s) on this Reel.[/cyan]")
 
             if not comments:
@@ -106,8 +149,11 @@ async def run_agent():
                     await reel_detector.navigate_to_next_reel()
                 continue
 
-            # 4. Investigate each commenter individually
+            # 4c. Investigate each commenter individually
+            #     visited_count tracks every profile we open (regardless of eligibility)
+            #     so we know true progress vs the UI's total comment count.
             processed_count = 0
+            visited_count = 0  # Every profile we actually open/visit
             for comment in comments:
                 username = comment.username
 
@@ -128,13 +174,14 @@ async def run_agent():
                     continue
 
                 session_logger.record_comment_read()
-                console.print(f"\n[bold cyan]► Commenter [{processed_count + 1}]:[/bold cyan] @{username}")
+                console.print(f"\n[bold cyan]► Commenter [{processed_count + 1}/{len(comments)}] (visited {visited_count}):[/bold cyan] @{username}")
                 console.print(f'  Comment: [italic]"{comment.text}"[/italic]')
 
                 # Safety checkpoint check
                 await browser_controller.wait_for_user_to_resolve_checkpoint()
 
-                # 5. Open commenter's profile (Mandatory Step)
+                # 5. Open commenter's profile (Mandatory Step) — counts as "visited" regardless of outcome
+                visited_count += 1
                 clicked = await comment_reader.click_commenter_profile(username)
                 if not clicked:
                     console.print(f"[red]Could not click profile link for @{username}. Marking unavailable.[/red]")
@@ -221,12 +268,19 @@ async def run_agent():
                 await fatigue_model.apply_fatigue_delay(settings.min_action_delay)
                 await fatigue_model.maybe_take_micro_break()
 
+                # --- Exit condition ---
+                # Primary: visited_count matches or exceeds the accessible comment list
+                # Secondary: hard safety cap (max_comments_per_reel) to prevent runaway sessions
+                if visited_count >= len(comments):
+                    console.print(f"[dim]✓ Visited all {visited_count} accessible profiles for this Reel.[/dim]")
+                    break
                 if processed_count >= settings.max_comments_per_reel:
-                    console.print(f"[yellow]Reached limit of {settings.max_comments_per_reel} comments for this Reel.[/yellow]")
+                    console.print(f"[yellow]Safety cap reached ({settings.max_comments_per_reel} profiles processed). Moving to next Reel.[/yellow]")
                     break
 
             # 9. All comments for this Reel finished
             console.print(f"\n[green]✓ Completed investigation of all comments on Reel [{reel_context.reel_id}].[/green]")
+            console.print(f"[dim]  Profiles visited: {visited_count} | Profiles processed (non-spam/non-dupe): {processed_count} | UI total shown: {total_comment_count}[/dim]")
             state_manager.mark_reel_processed(reel_context.reel_id)
 
             # 10. Close comments drawer and restore original Reel view

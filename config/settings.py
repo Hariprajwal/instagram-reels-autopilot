@@ -70,7 +70,7 @@ class AgentSettings(BaseModel):
     # Safety limits
     human_in_the_loop: bool = Field(default=os.getenv("HUMAN_IN_THE_LOOP", "true").lower() == "true")
     auto_send_dm: bool = Field(default=os.getenv("AUTO_SEND_DM", "true").lower() == "true")
-    max_comments_per_reel: int = Field(default=int(os.getenv("MAX_COMMENTS_PER_REEL", "25")))
+    max_comments_per_reel: int = Field(default=int(os.getenv("MAX_COMMENTS_PER_REEL", "150")))
     max_profiles_per_session: int = Field(default=int(os.getenv("MAX_PROFILES_PER_SESSION", "100")))
 
     # Timing and jitter (human-like pacing)
