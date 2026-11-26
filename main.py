@@ -239,26 +239,33 @@ async def run_agent():
                     break
 
                 # Scroll down to trigger next lazy-load batch.
-                # We wait 2.5s after scrolling — this naturally covers any Instagram loading
-                # spinner time without needing to detect it (spinner detection causes false positives).
+                # After scrolling, wait up to 8s for Instagram to actually load new comments
+                # (covers spinner time without needing unreliable spinner detection).
                 pre_scroll_count = len(await comment_reader.read_accessible_comments(reel_context.reel_id))
                 await comment_reader._scroll_comment_drawer(pixels=800)
-                await asyncio.sleep(2.5)  # Covers spinner load time — no need to detect spinner
 
-                # Check again for end-of-list marker after the new batch loaded
-                if await comment_reader._is_end_of_comments():
-                    console.print(f"[dim]✓ 'View hidden comments' marker visible after scroll — end of comment list.[/dim]")
+                # Poll: check every 1.5s whether new comments appeared (up to 8s total)
+                loaded = False
+                for _wait_round in range(5):
+                    await asyncio.sleep(2.5)
+                    if await comment_reader._is_end_of_comments():
+                        console.print(f"[dim]✓ 'View hidden comments' marker visible after scroll — end of comment list.[/dim]")
+                        reel_done = True
+                        break
+                    post_scroll_count = len(await comment_reader.read_accessible_comments(reel_context.reel_id))
+                    if post_scroll_count > pre_scroll_count:
+                        scroll_stall_rounds = 0
+                        loaded = True
+                        break  # New comments loaded — stop waiting, go process them
+
+                if reel_done:
                     break
 
-                post_scroll_count = len(await comment_reader.read_accessible_comments(reel_context.reel_id))
-
-                if post_scroll_count <= pre_scroll_count:
+                if not loaded:
                     scroll_stall_rounds += 1
                     if scroll_stall_rounds >= MAX_STALL:
                         console.print(f"[dim]✓ No new comments after {MAX_STALL} scroll rounds — end of comment list.[/dim]")
                         break
-                else:
-                    scroll_stall_rounds = 0  # New comments loaded — keep going
 
             # 9. All comments for this Reel finished
             console.print(f"\n[green]✓ Completed investigation of all comments on Reel [{reel_context.reel_id}].[/green]")

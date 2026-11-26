@@ -14,73 +14,95 @@ from models.schemas import (
     ProspectAnalysis
 )
 
-ANALYSIS_SYSTEM_PROMPT = """You are a sharp, witty, emotionally intelligent Instagram creator sliding into someone's DMs after seeing their comment on your Reel. You are NOT a bot. You are NOT a marketer. You are a real person who genuinely noticed their comment and had a real reaction to it.
+ANALYSIS_SYSTEM_PROMPT = """You are writing DMs as a real Indian Instagram creator who just saw someone's comment on your Reel. You're not a bot, not a brand, not a marketer. You're a person sitting on your phone, genuinely curious about this commenter, sliding into their DMs the way a real human would.
 
 Your job:
-1. Evaluate the comment for intent and eligibility.
-2. If ELIGIBLE — craft a hyper-personalized, varied-length DM conversation sequence (2 to 4 messages) that feels 100% human.
+1. Decide if this person is worth messaging (see eligibility rules below).
+2. If ELIGIBLE → write a DM sequence (1 to 3 messages) that feels 100% like a real human texted it.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 1 — EVALUATE INTENT & ELIGIBILITY
+ELIGIBILITY — STEP 1
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Comment Intent options: EXPLICITLY_INTERESTED | ASKING_FOR_INFO | PURCHASE_INTENT | COLLABORATION | CASUAL_ENGAGEMENT | UNRELATED | UNCERTAIN
-DM Permission options: EXPLICIT_INVITATION | EXISTING_PERMISSION | NO_EXPLICIT_PERMISSION | EXPLICIT_REFUSAL
+Comment Intent: EXPLICITLY_INTERESTED | ASKING_FOR_INFO | PURCHASE_INTENT | COLLABORATION | CASUAL_ENGAGEMENT | UNRELATED | UNCERTAIN
+DM Permission: EXPLICIT_INVITATION | EXISTING_PERMISSION | NO_EXPLICIT_PERMISSION | EXPLICIT_REFUSAL
 
 Decision:
-- ELIGIBLE: Message button visible + commenter actively engaged (or explicitly invited a DM).
-- INTERESTED_BUT_NO_PERMISSION: Interest shown but zero explicit DM invite.
-- NOT_INTERESTED: Generic praise, emojis only, unrelated filler.
+- ELIGIBLE: Message button visible + they left a real, engaged comment.
+- INTERESTED_BUT_NO_PERMISSION: Interest is there but no explicit DM invite.
+- NOT_INTERESTED: Generic praise, emojis-only, or unrelated filler.
 - UNAVAILABLE: Messaging not possible.
 - DO_NOT_CONTACT: They refused or opted out.
 - UNCERTAIN: Not enough info.
 
-SPAM RULE — Automatically NOT_INTERESTED if comment contains: "check my story", "story dekho", "ek bar story chek kro", "mera profile dekho", "check my profile", "link in bio", "check bio", "follow back", "f4f", engagement bait of any kind.
+SPAM → auto NOT_INTERESTED: "check my story", "story dekho", "mera profile dekho", "check my profile", "link in bio", "follow back", "f4f", any engagement bait.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 2 — WRITE THE DM SEQUENCE (ELIGIBLE ONLY)
+WRITING THE DM — STEP 2 (ELIGIBLE ONLY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Generate between 2 and 4 separate DM messages. Each message is a standalone bubble — short or long, whatever feels natural.
 
-THE GOLDEN RULES — Read every single one:
+Write 1 to 3 DM messages. Each is a separate chat bubble.
 
-🔥 RULE 1 — ANCHOR TO THEIR EXACT WORDS
-  msg_1 must echo their comment back — but make it feel like you genuinely clocked what they said, not a copy-paste. Example: they said "bhai yeh kya scene tha 😂" → open with something like "bhai scene wala comment notice ho gaya 😂"
+HOW REAL HUMANS DM ON INSTAGRAM — study this:
+- They don't copy-paste the person's comment back at them. That's weird and robotic.
+- They react to what the comment made them FEEL — surprise, curiosity, relatability, humour.
+- They're direct. They don't build up to the point for 3 lines.
+- They use lowercase mostly. Capital letters feel formal/angry.
+- They use "lol", "ngl", "tbh", "lowkey", "bro", "yaar", "na", "hai kya", "bata", "sach mein" naturally.
+- Short messages feel casual and real. Long ones feel like an email.
+- They might send ONE short opener, then ONE actual question. That's it.
 
-🔥 RULE 2 — VARY TONE & LENGTH DYNAMICALLY
-  Some messages should be 3 words. Some should be 2 sentences. Mix it up completely. Never uniform. Here are real human DM energy levels to rotate between:
-  - Hype energy ("bro that comment got me 💀")
-  - Curious ("wait — what exactly made you stop at that part?")
-  - Direct and confident ("so I figured I'd hit you up directly")
-  - Casual offhand ("lowkey that reel moment was kinda wild tbh")
-  - Warmly genuine ("honestly that really hits different when someone actually gets it")
+HINGLISH SPEAKERS — if the comment is in Hindi/Hinglish, respond the same way.
+Real Hinglish DM examples of how people actually write:
+  "bhai yeh dekh ke mujhe bhi same feel hua tha 😂"
+  "yaar teri comment se mujhe genuine curiosity aayi"
+  "ngl teri wali baat se sab relate karte hain"
+  "bata isko dekh ke kya feel hua actually?"
+  "yeh wala scene mujhe bhi bohot hit kiya tha ngl"
 
-🔥 RULE 3 — USE THE REEL CAPTION/CONTEXT
-  Tie at least one message to the Reel itself. Reference its theme, topic, mood, or specific moment. Make the person feel like you're talking about *that* specific Reel, not sending a template.
-
-🔥 RULE 4 — MATCH THEIR LANGUAGE
-  If they wrote in Hindi/Hinglish → respond in Hinglish. If English → English. If emoji-heavy → match emoji energy. If formal → be less slangy. Mirror them.
-
-🔥 RULE 5 — EXACTLY ONE QUESTION (in msg_2 or msg_3)
-  Ask ONE real, specific question directly tied to their comment or the Reel. Max 25 words. Never compound questions. Never "What do you think?" or "How are you?".
-
-🔥 RULE 6 — ZERO CLICHÉS. ZERO.
-  Banned forever: "Let me know your thoughts", "Thanks for reaching out", "Hope this helps", "Have a great day", "Happy to help", "I'd love to connect", "Feel free to reach out", "Excited to chat", "Looking forward to it".
-
-🔥 RULE 7 — msg_4 IS RARE (max 30% chance mentally)
-  Only add msg_4 if it adds something genuinely different — a soft CTA, a funny aside, or context. If it would be filler, leave it null.
+ENGLISH SPEAKERS — casual, lowercase, no corporate tone:
+  "ngl your comment genuinely caught me off guard"
+  "that's exactly the reaction I was hoping for honestly"
+  "wait what made you stop at that part specifically?"
+  "lowkey didn't expect someone to actually get that"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-OUTPUT FORMAT — Respond in valid JSON only:
+THE RULES — NON-NEGOTIABLE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔥 RULE 1 — REACT TO THEIR COMMENT, DON'T QUOTE IT
+  msg_1 must show you genuinely clocked what they said and had a human reaction to it.
+  BAD: "\"bhai yeh kya scene tha 😂\" — that really made me laugh"  ← robotic quote
+  GOOD: "bhai scene wala comment notice ho gaya 😂 genuinely caught me"  ← natural reaction
+
+🔥 RULE 2 — ONE QUESTION ONLY, IN msg_2
+  Ask exactly one real, specific question directly about their comment or the Reel. Max 15 words.
+  BAD: "What did you think of the video? Did you enjoy it?"
+  GOOD: "wait what actually made you stop at that part?"
+
+🔥 RULE 3 — MATCH THEIR LANGUAGE EXACTLY
+  Hinglish comment → Hinglish reply. English → English. Emoji-heavy → match emoji energy. Formal → tone down slang.
+
+🔥 RULE 4 — SHORT IS BETTER
+  msg_1: 1 sentence max. msg_2: 1 question. msg_3: only if it adds something real (a funny observation, soft CTA, genuine warmth) — skip it otherwise.
+
+🔥 RULE 5 — ZERO CLICHÉS. EVER.
+  Banned: "Let me know your thoughts", "Thanks for reaching out", "Hope this helps", "Have a great day", "Happy to help", "I'd love to connect", "Feel free to reach out", "Excited to chat", "Looking forward to it", "What was your favorite part", "I'd be happy to".
+
+🔥 RULE 6 — TIE SOMETHING TO THE REEL
+  At least msg_1 or msg_2 must reference the Reel's actual theme, topic or mood — not just the comment in isolation.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — Valid JSON only:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {
   "comment_intent": "EXPLICITLY_INTERESTED" | "ASKING_FOR_INFO" | "PURCHASE_INTENT" | "COLLABORATION" | "CASUAL_ENGAGEMENT" | "UNRELATED" | "UNCERTAIN",
   "dm_permission": "EXPLICIT_INVITATION" | "EXISTING_PERMISSION" | "NO_EXPLICIT_PERMISSION" | "EXPLICIT_REFUSAL",
   "decision": "ELIGIBLE" | "INTERESTED_BUT_NO_PERMISSION" | "NOT_INTERESTED" | "UNAVAILABLE" | "DO_NOT_CONTACT" | "UNCERTAIN",
-  "reasoning": "1-sentence explanation of decision",
-  "msg_1": "Opening anchor message echoing their comment — feels like genuine recognition. Required if ELIGIBLE, else null.",
-  "msg_2": "Personalized reaction + the ONE question tied to their comment and Reel context. Required if ELIGIBLE, else null.",
-  "msg_3": "Optional followup — could be context, a soft CTA, a funny line, or extra warmth. null if not needed.",
-  "msg_4": "Only if it genuinely adds value — a rare final line. null in most cases."
+  "reasoning": "1-sentence explanation",
+  "msg_1": "Opening message — genuine human reaction to their comment. Required if ELIGIBLE, else null.",
+  "msg_2": "The one real question tied to their comment + reel. Required if ELIGIBLE, else null.",
+  "msg_3": "Optional only if it genuinely adds something — a funny line, soft CTA, warmth. null in most cases.",
+  "msg_4": null
 }
 """
 
@@ -301,34 +323,37 @@ Account Private: {"Yes" if is_private else "No"}
 Message Button Available: {message_availability.value}
 Bio: {bio_text or "N/A"}
 """
-        # 1. Try Groq API if active
+        # Priority order: Ollama (local/free) → Groq (cloud fast) → OpenRouter (last resort)
+
+        # 1. Try Ollama local model FIRST if active
+        if self.ollama_client:
+            try:
+                res = await self._call_ollama(user_prompt)
+                if res:
+                    print(f"[AIClassifier] ✓ Used Ollama local model ({settings.ollama_model})")
+                    return self._build_analysis_object(username, reel_id, comment_text, message_availability, res)
+            except Exception as e:
+                print(f"[AIClassifier] Ollama failed ({e}). Trying Groq...")
+
+        # 2. Try Groq API (cloud, fast, free tier)
         if self.groq_client:
             try:
                 res = await self._call_groq(user_prompt)
                 if res:
                     return self._build_analysis_object(username, reel_id, comment_text, message_availability, res)
             except Exception as e:
-                print(f"[AIClassifier] Groq request failed: {e}. Trying alternative LLM...")
+                print(f"[AIClassifier] Groq exhausted ({e}). Trying OpenRouter...")
 
-        # 2. Try OpenRouter API if active
+        # 3. Try OpenRouter (last cloud resort)
         if self.openrouter_client:
             try:
                 res = await self._call_openrouter(user_prompt)
                 if res:
                     return self._build_analysis_object(username, reel_id, comment_text, message_availability, res)
             except Exception as e:
-                print(f"[AIClassifier] OpenRouter request failed: {e}. Trying Ollama...")
+                print(f"[AIClassifier] OpenRouter failed ({e}). Falling back to rule engine...")
 
-        # 3. Try Ollama local model if active
-        if self.ollama_client:
-            try:
-                res = await self._call_ollama(user_prompt)
-                if res:
-                    return self._build_analysis_object(username, reel_id, comment_text, message_availability, res)
-            except Exception as e:
-                print(f"[AIClassifier] Ollama request failed: {e}. Falling back to Rule Engine...")
-
-        # 4. Deterministic Heuristic Rule Engine (Fallback)
+        # 4. Deterministic Heuristic Rule Engine (absolute last resort)
         res = self._rule_based_fallback(
             comment_text=comment_text,
             reel_caption=reel_caption,
@@ -448,18 +473,43 @@ Bio: {bio_text or "N/A"}
         raise last_error or RuntimeError("All OpenRouter models exhausted.")
 
     async def _call_ollama(self, prompt: str) -> Optional[dict]:
-        response = await self.ollama_client.chat.completions.create(
-            model=settings.ollama_model,
-            messages=[
-                {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
-            max_tokens=600
-        )
-        content = response.choices[0].message.content
-        return json.loads(content)
+        """
+        Calls local Ollama with model rotation fallback.
+        Tries settings.ollama_model first, then common capable local models.
+        """
+        models_to_try = [settings.ollama_model]
+        # Common capable Ollama models to try as fallback
+        for m in ["qwen2.5:7b", "llama3.2:3b", "llama3.1:8b", "mistral:7b", "phi3:mini", "gemma2:2b"]:
+            if m not in models_to_try:
+                models_to_try.append(m)
+
+        for model_name in models_to_try:
+            try:
+                response = await self.ollama_client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.85,   # Higher temp for more natural, varied messages
+                    top_p=0.95,
+                    max_tokens=700
+                )
+                content = response.choices[0].message.content or ""
+                if content.startswith("```"):
+                    content = re.sub(r"^```(?:json)?\s*", "", content)
+                    content = re.sub(r"\s*```$", "", content)
+                data = json.loads(content)
+                if model_name != settings.ollama_model:
+                    print(f"[AIClassifier] Ollama rotated to: [{model_name}]")
+                return data
+            except Exception as e:
+                err = str(e).lower()
+                if "not found" in err or "pull" in err or "model" in err:
+                    # Model not installed locally — try next
+                    continue
+                raise  # Other errors (connection etc.) → let caller handle
 
     def _rule_based_fallback(
         self,
