@@ -132,7 +132,7 @@ class ReelDetector:
         last_seen_id = None
         settle_start_time = None
         consecutive_skips = 0
-        MAX_CONSECUTIVE_SKIPS = 5  # Safety: stop auto-advancing after this many misses
+        MAX_CONSECUTIVE_SKIPS = 25  # Raised: feed can reset to top many times before hitting fresh reels
 
         while True:
             info = await self.get_active_reel_info()
@@ -198,9 +198,11 @@ class ReelDetector:
         """
         Navigates to the next Reel in sequence.
 
-        STRATEGY: Use mouse.wheel() scroll — works on BOTH /reels/ feed AND /reel/{id}/ pages,
-        is the most human-like gesture, and does NOT reset back to reel-1 like navigating
-        to /reels/ does. Falls back to Down Arrow button click, then PageDown if scroll fails.
+        STRATEGY: Use mouse.wheel() scroll — works on BOTH /reels/ feed AND /reel/{id}/ pages.
+        After scroll, if we land on the /reels/ feed without a specific reel ID in the URL
+        (which means Instagram reset to top), we grab the actually-playing reel from the DOM
+        and navigate to its permalink — this gives a stable, consistent reel ID and avoids
+        the "first reel loop" bug where the feed reset looks like a valid new reel.
         """
         previous_id = self.current_reel_id
         if not previous_id or previous_id.startswith("unknown"):
@@ -231,7 +233,6 @@ class ReelDetector:
                 pass
 
         # ── Step 2: Mouse wheel scroll — primary method ───────────────────────────
-        # Natural Gaussian scroll (not exact fixed pixel amounts every time).
         print("[ReelDetector] Scrolling down (human wheel simulation) to advance to next Reel...")
         try:
             await human_scroll_down(self.page, viewport_fraction=0.9)
@@ -239,12 +240,34 @@ class ReelDetector:
         except Exception as e:
             print(f"[ReelDetector] Scroll notice: {e}")
 
-        # Check if scroll worked
+        # Check if scroll worked — and handle the "feed reset to top" case
         for _ in range(6):
             await asyncio.sleep(0.4)
             check = await self.get_active_reel_info()
             new_id = check["reel_id"]
+
             if new_id and new_id != previous_id and not new_id.startswith("unknown"):
+                # Scroll landed on a different reel — but was it a feed reset to reel-1?
+                # If we're now on /reels/ feed (no specific ID in URL), navigate to the
+                # reel's permalink so we get a stable ID across the whole session.
+                current_url = self.page.url
+                on_feed = bool(re.search(r'instagram\.com/reels/?$', current_url))
+                if on_feed:
+                    # Navigate to the specific reel's permalink for stable ID detection
+                    print(f"[ReelDetector] On feed after scroll (may be reset). Navigating to permalink: /reel/{new_id}/")
+                    try:
+                        await self.page.goto(
+                            f"https://www.instagram.com/reel/{new_id}/",
+                            wait_until="domcontentloaded",
+                            timeout=12000
+                        )
+                        await asyncio.sleep(1.5)
+                        # Re-read after navigation
+                        check = await self.get_active_reel_info()
+                        new_id = check["reel_id"]
+                    except Exception as nav_err:
+                        print(f"[ReelDetector] Permalink nav error: {nav_err}")
+
                 print(f"[ReelDetector] ✓ Scroll advanced to next Reel: [{new_id}]")
                 self.current_reel_id = new_id
                 return True

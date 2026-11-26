@@ -185,12 +185,14 @@ class MessageSequenceAutomata:
 
     @classmethod
     def _clean(cls, text: str) -> str:
-        """Strip wrapping quotes and ensure clean text."""
+        """Strip wrapping quotes, hashtags, and ensure clean text."""
         if not text:
             return ""
         text = text.strip()
         if len(text) >= 2 and text[0] in ('"', "'") and text[-1] == text[0]:
             text = text[1:-1].strip()
+        # Strip hashtags — DMs with hashtags look like copy-paste marketing, not human
+        text = re.sub(r'\s*#\w+', '', text).strip()
         return text
 
     @classmethod
@@ -489,8 +491,8 @@ Bio: {bio_text or "N/A"}
         Tries settings.ollama_model first, then common capable local models.
         """
         models_to_try = [settings.ollama_model]
-        # Common capable Ollama models to try as fallback
-        for m in ["qwen2.5:7b", "llama3.2:3b", "llama3.1:8b", "mistral:7b", "phi3:mini", "gemma2:2b"]:
+        # Prefer big-context capable local models — small ones give generic responses
+        for m in ["qwen2.5:14b", "llama3.1:8b", "llama3.3:70b", "qwen2.5:7b", "mistral:7b", "llama3.2:3b", "phi3:mini", "gemma2:2b"]:
             if m not in models_to_try:
                 models_to_try.append(m)
 
