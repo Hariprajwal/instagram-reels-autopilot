@@ -42,17 +42,21 @@ WRITING THE DM — STEP 2 (ELIGIBLE ONLY)
 
 Write 1 to 3 DM messages. Each is a separate chat bubble.
 
+⚠️ CRITICAL — msg_1 IS ALWAYS null IN YOUR OUTPUT:
+  The system AUTOMATICALLY sends their original comment text as the very first bubble — you never write msg_1.
+  Your job starts at msg_2. Always output msg_1 as null.
+
 HOW REAL HUMANS DM ON INSTAGRAM — study this:
-- They don't copy-paste the person's comment back at them. That's weird and robotic.
-- They react to what the comment made them FEEL — surprise, curiosity, relatability, humour.
+- After seeing a comment they react to in their DMs, real humans first "echo" that comment (the app does this automatically — it appears as the first bubble).
+- Then they react in msg_2: what the comment made them FEEL — surprise, curiosity, relatability, humour.
 - They're direct. They don't build up to the point for 3 lines.
 - They use lowercase mostly. Capital letters feel formal/angry.
 - They use "lol", "ngl", "tbh", "lowkey", "bro", "yaar", "na", "hai kya", "bata", "sach mein" naturally.
 - Short messages feel casual and real. Long ones feel like an email.
-- They might send ONE short opener, then ONE actual question. That's it.
+- They might send ONE short reaction, then ONE actual question. That's it.
 
 HINGLISH SPEAKERS — if the comment is in Hindi/Hinglish, respond the same way.
-Real Hinglish DM examples of how people actually write:
+Real Hinglish DM examples of how people actually write (these are your msg_2 / msg_3):
   "bhai yeh dekh ke mujhe bhi same feel hua tha 😂"
   "yaar teri comment se mujhe genuine curiosity aayi"
   "ngl teri wali baat se sab relate karte hain"
@@ -69,12 +73,13 @@ ENGLISH SPEAKERS — casual, lowercase, no corporate tone:
 THE RULES — NON-NEGOTIABLE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔥 RULE 1 — REACT TO THEIR COMMENT, DON'T QUOTE IT
-  msg_1 must show you genuinely clocked what they said and had a human reaction to it.
-  BAD: "\"bhai yeh kya scene tha 😂\" — that really made me laugh"  ← robotic quote
-  GOOD: "bhai scene wala comment notice ho gaya 😂 genuinely caught me"  ← natural reaction
+🔥 RULE 1 — msg_1 IS ALWAYS null — DO NOT WRITE IT
+  The system sends their original comment as the first bubble automatically.
+  Your msg_2 is the actual first thing YOU say. Make it a genuine human reaction.
+  BAD msg_2: "\"bhai yeh kya scene tha 😂\" — that really made me laugh"  ← quoting again = robotic
+  GOOD msg_2: "bhai scene wala comment notice ho gaya 😂 genuinely caught me"  ← natural reaction
 
-🔥 RULE 2 — ONE QUESTION ONLY, IN msg_2
+🔥 RULE 2 — ONE QUESTION ONLY, IN msg_2 OR msg_3
   Ask exactly one real, specific question directly about their comment or the Reel. Max 15 words.
   BAD: "What did you think of the video? Did you enjoy it?"
   GOOD: "wait what actually made you stop at that part?"
@@ -83,7 +88,7 @@ THE RULES — NON-NEGOTIABLE:
   Hinglish comment → Hinglish reply. English → English. Emoji-heavy → match emoji energy. Formal → tone down slang.
 
 🔥 RULE 4 — SHORT IS BETTER
-  msg_1: 1 sentence max. msg_2: 1 question. msg_3: only if it adds something real (a funny observation, soft CTA, genuine warmth) — skip it otherwise.
+  msg_2: 1 sentence reaction max. msg_3 (question): short and direct. msg_4: only if it adds something real (a funny observation, soft CTA, genuine warmth) — skip it otherwise.
 
 🔥 RULE 5 — ZERO CLICHÉS. EVER.
   Banned: "Let me know your thoughts", "Thanks for reaching out", "Hope this helps", "Have a great day", "Happy to help", "I'd love to connect", "Feel free to reach out", "Excited to chat", "Looking forward to it", "What was your favorite part", "I'd be happy to".
@@ -99,10 +104,10 @@ OUTPUT FORMAT — Valid JSON only:
   "dm_permission": "EXPLICIT_INVITATION" | "EXISTING_PERMISSION" | "NO_EXPLICIT_PERMISSION" | "EXPLICIT_REFUSAL",
   "decision": "ELIGIBLE" | "INTERESTED_BUT_NO_PERMISSION" | "NOT_INTERESTED" | "UNAVAILABLE" | "DO_NOT_CONTACT" | "UNCERTAIN",
   "reasoning": "1-sentence explanation",
-  "msg_1": "Opening message — genuine human reaction to their comment. Required if ELIGIBLE, else null.",
-  "msg_2": "The one real question tied to their comment + reel. Required if ELIGIBLE, else null.",
-  "msg_3": "Optional only if it genuinely adds something — a funny line, soft CTA, warmth. null in most cases.",
-  "msg_4": null
+  "msg_1": null,
+  "msg_2": "YOUR first message — genuine human reaction to their comment + reel. Required if ELIGIBLE.",
+  "msg_3": "The ONE specific question tied to their comment/reel. Required if ELIGIBLE.",
+  "msg_4": "Optional only if it genuinely adds something — a funny line, soft CTA, warmth. null in most cases."
 }
 """
 
@@ -212,35 +217,41 @@ class MessageSequenceAutomata:
     def process_sequence(cls, comment_text: str, data: dict, fallback_q: str = None) -> list:
         """
         Builds the final ordered DM sequence (2–4 messages).
-        Reads new keys (msg_1..msg_4) first, falls back to legacy keys.
+
+        Slot 1 — ALWAYS the commenter's exact original comment text (non-negotiable).
+                  This is what creates natural context — the person sees their own words echoed back.
+                  The AI is instructed to set msg_1=null; we override it here regardless.
+
+        Slot 2 — AI's genuine human reaction to the comment (msg_2). Required.
+
+        Slot 3 — AI's ONE specific question (msg_3). Required.
+                  Falls back to legacy key suggested_question or fallback_q.
+
+        Slot 4 — Optional bonus line (msg_4). Hard-capped at 30% chance.
         """
         sequence = []
 
-        # ── Slot 1: Anchor (required) ─────────────────────────────────────────
-        raw1 = cls._clean(data.get("msg_1") or data.get("message_1_quote") or comment_text or "")
-        if cls._is_valid(raw1, sequence):
-            sequence.append(raw1)
+        # ── Slot 1: Their comment verbatim — always first, always sent ────────
+        raw1 = cls._clean(comment_text or "")
+        if raw1:
+            sequence.append(raw1)  # Non-negotiable: their own comment goes first
 
-        # ── Slot 2: Personalized reaction + 1 question (required) ────────────
-        raw2 = cls._clean(data.get("msg_2") or data.get("suggested_question") or fallback_q or "")
-        raw2 = cls._enforce_one_question(raw2)
+        # ── Slot 2: AI's human reaction (required) ────────────────────────────
+        raw2 = cls._clean(data.get("msg_2") or data.get("msg_1") or data.get("message_1_quote") or "")
         if cls._is_valid(raw2, sequence):
             sequence.append(raw2)
 
-        # ── Slot 3: Optional followup ─────────────────────────────────────────
-        # Always include if AI generated it (AI already decided ~30-50% probability in prompt)
-        raw3 = cls._clean(data.get("msg_3") or data.get("message_3_optional") or "")
+        # ── Slot 3: The ONE question (required) ───────────────────────────────
+        raw3 = cls._clean(data.get("msg_3") or data.get("suggested_question") or fallback_q or "")
+        raw3 = cls._enforce_one_question(raw3)
         if cls._is_valid(raw3, sequence):
             sequence.append(raw3)
 
-        # ── Slot 4: Rare bonus line (hard-capped at 30% even if AI provided it) ─
-        raw4 = cls._clean(data.get("msg_4") or "")
+        # ── Slot 4: Rare bonus line (hard-capped at 30%) ──────────────────────
+        raw4 = cls._clean(data.get("msg_4") or data.get("message_3_optional") or "")
         if raw4 and random.random() < 0.30 and cls._is_valid(raw4, sequence):
             sequence.append(raw4)
 
-        # ── Safety: ensure at least 2 messages are sent ───────────────────────
-        # If AI only gave 1 and no fallback, duplicate-but-rephrase is better
-        # than sending just one robotic bubble — but we just return what we have.
         return sequence
 
 class AIClassifier:
